@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application configuration with environment variable overrides."""
 
-    port: int = 8006
+    port: int = 8007
     max_workers: int = 5
     db_path: str = "data/budgets.db"
     auth_db_path: str = "data/auth.db"

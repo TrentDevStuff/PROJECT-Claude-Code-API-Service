@@ -13,7 +13,7 @@ class ServiceConfig(BaseModel):
     """Service configuration"""
 
     directory: Path
-    port: int = 8006
+    port: int = 8007
     host: str = "0.0.0.0"
     auto_start: bool = False
 
