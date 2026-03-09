@@ -165,6 +165,8 @@ class SecurityValidator:
             "AWS_SECRET_ACCESS_KEY",
             "GITHUB_TOKEN",
             "ANTHROPIC_API_KEY",
+            "CLAUDECODE",
+            "CLAUDE_CODE_SESSION",
         }
 
         sanitized = {}

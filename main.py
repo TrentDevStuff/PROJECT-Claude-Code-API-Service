@@ -6,6 +6,7 @@ A flexible, reusable API service that wraps Claude Code CLI for rapid prototypin
 from __future__ import annotations
 
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import Any
@@ -59,6 +60,11 @@ async def lifespan(app: FastAPI):
 
     _start_time = time.time()
     _shutting_down = False
+
+    # Strip env vars that break Claude CLI subprocesses (e.g. when service
+    # is started from inside a Claude Code session).
+    for _var in ("CLAUDECODE", "CLAUDE_CODE_SESSION"):
+        os.environ.pop(_var, None)
 
     # Startup: Initialize services
     worker_pool = WorkerPool(max_workers=settings.max_workers, mcp_config=settings.mcp_config)

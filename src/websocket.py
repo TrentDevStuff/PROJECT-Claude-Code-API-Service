@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import tempfile
 import uuid
@@ -340,6 +341,9 @@ class WebSocketStreamer:
                 "json",
             ]
 
+            # Build clean environment (strip vars that block nested Claude CLI)
+            env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDE_CODE_SESSION")}
+
             # Start process
             process = subprocess.Popen(
                 cmd,
@@ -348,6 +352,7 @@ class WebSocketStreamer:
                 shell=True,
                 text=True,
                 bufsize=1,  # Line buffered
+                env=env,
             )
 
             # Stream output
@@ -379,12 +384,17 @@ class WebSocketStreamer:
             stderr_task.cancel()
 
             if return_code != 0:
-                # Try to get stderr output, ignore if cancelled
+                # Collect stderr output for error diagnosis
+                stderr_output = ""
                 try:
-                    await asyncio.wait_for(stderr_task, timeout=0.1)
+                    stderr_lines = await asyncio.wait_for(stderr_task, timeout=1.0)
+                    stderr_output = "".join(stderr_lines).strip()
                 except (TimeoutError, asyncio.CancelledError):
                     pass
-                raise RuntimeError(f"Claude CLI exited with code {return_code}")
+                error_msg = f"Claude CLI exited with code {return_code}"
+                if stderr_output:
+                    error_msg += f": {stderr_output}"
+                raise RuntimeError(error_msg)
 
             # Parse output
             output_text = "".join(full_output)

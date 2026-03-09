@@ -144,6 +144,9 @@ def start(
         cmd = ["python", str(service_dir / "main.py")]
         env = os.environ.copy()
         env["CLAUDE_API_PORT"] = str(service_port)
+        # Strip vars that block nested Claude CLI sessions
+        for _var in ("CLAUDECODE", "CLAUDE_CODE_SESSION"):
+            env.pop(_var, None)
 
         if background:
             # Redirect stderr (structured JSON logs) to log file
