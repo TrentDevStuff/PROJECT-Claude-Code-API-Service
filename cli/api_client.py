@@ -17,7 +17,7 @@ class APIError(Exception):
 class APIClient:
     """HTTP client for Claude Code API Service"""
 
-    def __init__(self, base_url: str = "http://localhost:8007", api_key: str | None = None):
+    def __init__(self, base_url: str = "http://localhost:8006", api_key: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.session = requests.Session()

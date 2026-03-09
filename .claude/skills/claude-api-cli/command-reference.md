@@ -426,7 +426,7 @@ claude-api config-validate
 
 **Usage:**
 ```bash
-PORT=8007 claude-api service start
+PORT=8006 claude-api service start
 CLAUDE_API_SERVICE_DIR=/custom/path claude-api config-show
 ```
 

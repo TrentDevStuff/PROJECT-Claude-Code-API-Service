@@ -439,7 +439,7 @@ lsof -i :8006
 claude-api service stop
 
 # Or use a different port
-claude-api service start --port 8007
+claude-api service start --port 8006
 ```
 
 **"Redis: not running"**
