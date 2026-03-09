@@ -1,16 +1,17 @@
 """Health check commands"""
 
-import typer
 from pathlib import Path
+
+import typer
 from rich.console import Console
 
 from ..api_client import APIClient, APIError
-from ..config import config_manager
 from ..utils import (
-    print_success,
+    create_status_table,
     print_error,
     print_info,
-    create_status_table,
+    print_success,
+    print_warning,
 )
 
 app = typer.Typer(help="Health checks")
@@ -22,54 +23,66 @@ def check(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed component status"),
 ):
-    """Comprehensive health check"""
+    """Comprehensive health check using deep /health endpoint"""
 
     try:
         client = APIClient()
-        config = config_manager.load()
 
-        # Overall health
+        # Get deep health data from API
         try:
             health_data = client.get_health()
-            overall_healthy = True
-            print_success("Overall: Healthy")
+            overall_status = health_data.get("status", "unknown")
         except APIError as e:
-            overall_healthy = False
-            print_error("Overall: Unhealthy", str(e))
+            print_error("Service not responding", str(e))
+            raise typer.Exit(1)
+
+        if json_output:
+            import json
+
+            console.print(json.dumps(health_data, indent=2))
+            return
+
+        # Overall status
+        if overall_status == "ok":
+            print_success("Overall: Healthy")
+        else:
+            print_warning(f"Overall: {overall_status.title()}")
+
+        # Uptime
+        uptime = health_data.get("uptime_seconds")
+        if uptime is not None:
+            from ..utils import format_duration
+
+            print_info(f"Uptime: {format_duration(uptime)} (v{health_data.get('version', '?')})")
 
         print()
 
-        # Component checks
+        # Per-service status from /health response
         components = []
+        services = health_data.get("services", {})
 
-        # API Service
-        if overall_healthy:
-            components.append(("API Service", "✓ Responding"))
-        else:
-            components.append(("API Service", "✗ Not responding"))
+        for svc_name, svc_data in services.items():
+            svc_status = svc_data.get("status", "unknown")
+            label = svc_name.replace("_", " ").title()
 
-        # Redis
-        try:
-            import redis
-            r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=2)
-            ping_time = r.ping()
-            components.append(("Redis", f"✓ Connected (ping: {ping_time}ms)"))
-        except:
-            components.append(("Redis", "✗ Not running"))
+            if svc_status == "ok":
+                detail_str = "✓ OK"
+                # Show worker pool detail if verbose
+                if verbose and svc_name == "worker_pool":
+                    detail = svc_data.get("detail", {})
+                    if detail:
+                        active = detail.get("active_workers", "?")
+                        max_w = detail.get("max_workers", "?")
+                        queued = detail.get("queued_tasks", "?")
+                        detail_str = f"✓ OK ({active}/{max_w} workers, {queued} queued)"
+            elif svc_status == "unavailable":
+                detail_str = "✗ Unavailable"
+            else:
+                detail_str = f"⚠ {svc_status}"
 
-        # Budget Manager (check via health endpoint)
-        if overall_healthy and health_data:
-            components.append(("Budget Manager", "✓ Operational"))
-        else:
-            components.append(("Budget Manager", "⚠ Unknown"))
+            components.append((label, detail_str))
 
-        # Auth Manager
-        if overall_healthy and health_data:
-            components.append(("Auth Manager", "✓ Operational"))
-        else:
-            components.append(("Auth Manager", "⚠ Unknown"))
-
-        # Agent Discovery
+        # Local-only checks (not in /health): agent/skill directories
         agents_dir = Path.home() / ".claude" / "agents"
         if agents_dir.exists():
             agent_count = len(list(agents_dir.glob("*.md")))
@@ -77,7 +90,6 @@ def check(
         else:
             components.append(("Agent Discovery", "✗ Directory not found"))
 
-        # Skill Discovery
         skills_dir = Path.home() / ".claude" / "skills"
         if skills_dir.exists():
             skill_count = len(list(skills_dir.glob("*/skill.json")))
@@ -88,6 +100,8 @@ def check(
         table = create_status_table("Health Check Results", components)
         console.print(table)
 
+    except typer.Exit:
+        raise
     except Exception as e:
         print_error(f"Health check failed: {str(e)}")
         raise typer.Exit(1)
@@ -104,10 +118,11 @@ def deps():
         print_info("Checking Redis...")
         try:
             import redis
-            r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=2)
+
+            r = redis.Redis(host="localhost", port=6379, socket_connect_timeout=2)
             r.ping()
             info = r.info()
-            mem_used = info.get('used_memory_human', 'unknown')
+            mem_used = info.get("used_memory_human", "unknown")
 
             deps_status.append(("Status", "✓ Running"))
             deps_status.append(("Port", "6379"))
@@ -127,12 +142,9 @@ def deps():
         print_info("Checking Claude CLI...")
         try:
             import subprocess
+
             result = subprocess.run(
-                ["claude", "--version"],
-                capture_output=True,
-                check=True,
-                timeout=5,
-                text=True
+                ["claude", "--version"], capture_output=True, check=True, timeout=5, text=True
             )
             version = result.stdout.strip()
 
@@ -140,11 +152,7 @@ def deps():
             claude_status.append(("Version", version))
 
             # Find path
-            which_result = subprocess.run(
-                ["which", "claude"],
-                capture_output=True,
-                text=True
-            )
+            which_result = subprocess.run(["which", "claude"], capture_output=True, text=True)
             if which_result.returncode == 0:
                 claude_status.append(("Path", which_result.stdout.strip()))
 
@@ -186,7 +194,9 @@ def deps():
         skills_status.append(("Location", str(skills_dir)))
 
         if skills_dir.exists():
-            skill_dirs = [d for d in skills_dir.iterdir() if d.is_dir() and (d / "skill.json").exists()]
+            skill_dirs = [
+                d for d in skills_dir.iterdir() if d.is_dir() and (d / "skill.json").exists()
+            ]
             skills_status.append(("Count", f"{len(skill_dirs)} discovered"))
 
             if skill_dirs:
@@ -204,18 +214,37 @@ def deps():
 
 
 @app.command()
-def ping():
+def ping(
+    ready: bool = typer.Option(
+        False, "--ready", "-r", help="Use /ready endpoint instead of /health"
+    ),
+):
     """Quick ping (is service responding?)"""
 
     try:
         client = APIClient()
 
-        if client.is_service_running():
-            print_success("Service is responding")
+        if ready:
+            try:
+                data = client.get_ready()
+                if data.get("ready"):
+                    print_success("Service is ready (accepting traffic)")
+                else:
+                    reason = data.get("reason", "unknown")
+                    print_error(f"Service is not ready: {reason}")
+                    raise typer.Exit(1)
+            except APIError as e:
+                print_error("Service is not responding", str(e))
+                raise typer.Exit(1)
         else:
-            print_error("Service is not responding", "Check with: claude-api service status")
-            raise typer.Exit(1)
+            if client.is_service_running():
+                print_success("Service is responding")
+            else:
+                print_error("Service is not responding", "Check with: claude-api service status")
+                raise typer.Exit(1)
 
+    except typer.Exit:
+        raise
     except Exception as e:
         print_error(f"Ping failed: {str(e)}")
         raise typer.Exit(1)

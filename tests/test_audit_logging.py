@@ -1,14 +1,13 @@
 """Tests for audit logging functionality."""
 
-import pytest
-import asyncio
 import json
-from datetime import datetime, timedelta
-import tempfile
 import os
+import tempfile
 
-from src.audit_logger import AuditLogger
+import pytest
+
 from src.agentic_executor import AgenticExecutor, AgenticTaskRequest
+from src.audit_logger import AuditLogger
 
 
 @pytest.fixture
@@ -42,10 +41,7 @@ async def test_tool_call_logging(audit_logger):
     api_key = "test_key_001"
 
     await audit_logger.log_tool_call(
-        task_id=task_id,
-        api_key=api_key,
-        tool="Read",
-        args={"file": "src/example.py"}
+        task_id=task_id, api_key=api_key, tool="Read", args={"file": "src/example.py"}
     )
 
     # Query and verify
@@ -59,22 +55,25 @@ async def test_tool_call_logging(audit_logger):
 
 
 @pytest.mark.asyncio
-async def test_security_event_logging(audit_logger, capsys):
+async def test_security_event_logging(audit_logger, caplog):
     """Test logging of security events with alerts."""
+    import logging
+
     task_id = "task_002"
     api_key = "test_key_002"
 
-    await audit_logger.log_security_event(
-        task_id=task_id,
-        api_key=api_key,
-        event="blocked_command",
-        details={"command": "rm -rf /", "reason": "dangerous"}
-    )
+    with caplog.at_level(logging.CRITICAL, logger="src.audit_logger"):
+        await audit_logger.log_security_event(
+            task_id=task_id,
+            api_key=api_key,
+            event="blocked_command",
+            details={"command": "rm -rf /", "reason": "dangerous"},
+        )
 
-    # Verify alert was printed
-    captured = capsys.readouterr()
-    assert "🚨 SECURITY ALERT" in captured.out
-    assert "blocked_command" in captured.out
+    # Verify alert was logged at CRITICAL level
+    assert any(
+        "SECURITY ALERT" in r.message and "blocked_command" in r.message for r in caplog.records
+    )
 
     # Query and verify in database
     logs = await audit_logger.query_logs(filters={"task_id": task_id})
@@ -89,17 +88,12 @@ async def test_log_query(audit_logger):
     # Create multiple log entries
     for i in range(5):
         await audit_logger.log_tool_call(
-            task_id="task_A",
-            api_key="key_1",
-            tool="Read",
-            args={"file": f"file_{i}.py"}
+            task_id="task_A", api_key="key_1", tool="Read", args={"file": f"file_{i}.py"}
         )
 
     for i in range(3):
         await audit_logger.log_bash_command(
-            task_id="task_B",
-            api_key="key_2",
-            command=f"pytest test_{i}.py"
+            task_id="task_B", api_key="key_2", command=f"pytest test_{i}.py"
         )
 
     # Test filtering by task_id
@@ -150,20 +144,23 @@ async def test_analytics_queries(audit_logger):
 async def test_executor_task_execution(audit_logger):
     """Test agentic executor with audit logging."""
     from unittest.mock import AsyncMock, Mock
-    from src.worker_pool import TaskResult, TaskStatus
+
     from src.budget_manager import BudgetManager
+    from src.worker_pool import TaskResult, TaskStatus
 
     # Create mocks
     mock_worker_pool = Mock()
     mock_worker_pool.submit = Mock(return_value="test-task-123")
-    mock_worker_pool.get_result = Mock(return_value=TaskResult(
-        task_id="test-123",
-        status=TaskStatus.COMPLETED,
-        completion="Task completed successfully",
-        usage={"input_tokens": 100, "output_tokens": 50},
-        cost=0.01,
-        error=None
-    ))
+    mock_worker_pool.get_result = Mock(
+        return_value=TaskResult(
+            task_id="test-123",
+            status=TaskStatus.COMPLETED,
+            completion="Task completed successfully",
+            usage={"input_tokens": 100, "output_tokens": 50},
+            cost=0.01,
+            error=None,
+        )
+    )
 
     mock_budget_manager = AsyncMock(spec=BudgetManager)
     mock_budget_manager.check_budget = AsyncMock(return_value=True)
@@ -171,15 +168,11 @@ async def test_executor_task_execution(audit_logger):
 
     # Create executor with mocks and real audit logger
     executor = AgenticExecutor(
-        worker_pool=mock_worker_pool,
-        budget_manager=mock_budget_manager,
-        audit_logger=audit_logger
+        worker_pool=mock_worker_pool, budget_manager=mock_budget_manager, audit_logger=audit_logger
     )
 
     request = AgenticTaskRequest(
-        description="Test task execution with audit logging",
-        api_key="test_exec_key",
-        timeout=30
+        description="Test task execution with audit logging", api_key="test_exec_key", timeout=30
     )
 
     response = await executor.execute_task(request)

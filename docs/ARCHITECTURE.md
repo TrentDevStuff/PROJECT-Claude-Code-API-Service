@@ -16,37 +16,40 @@ System architecture and component design documentation.
 │                      FastAPI Server (main.py)                     │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │ API Router (src/api.py)                                    │ │
-│  │  • POST /v1/chat/completions                               │ │
+│  │  • POST /v1/chat/completions  (CLI path)                   │ │
+│  │  • POST /v1/process           (SDK default, CLI opt-in)    │ │
+│  │  • POST /v1/task              (CLI path, agentic)          │ │
 │  │  • POST /v1/batch                                          │ │
 │  │  • GET  /v1/usage                                          │ │
+│  │  • GET  /v1/capabilities                                   │ │
 │  │  • POST /v1/route                                          │ │
 │  └────────────────────────────────────────────────────────────┘ │
-└──┬────────────────┬──────────────────┬─────────────────────────┬─┘
-   │                │                  │                         │
-   │                │                  │                         │
-   ▼                ▼                  ▼                         ▼
-┌─────────────┐ ┌──────────────┐ ┌──────────────┐  ┌──────────────────┐
-│ Worker Pool │ │ Model Router │ │Budget Manager│  │   Token Tracker  │
-│(worker_pool │ │(model_router │ │(budget_mgr   │  │(token_tracker.py)│
-│     .py)    │ │     .py)     │ │   .py)       │  │                  │
-└──────┬──────┘ └──────────────┘ └──────┬───────┘  └──────────────────┘
-       │                                  │
-       │                                  │
-       ▼                                  ▼
-┌────────────────────┐           ┌────────────────┐
-│  Claude CLI Procs  │           │ SQLite Database│
-│  (subprocess)      │           │ (budgets.db)   │
-│  • haiku workers   │           │ • Projects     │
-│  • sonnet workers  │           │ • Usage logs   │
-│  • opus workers    │           │ • Budgets      │
-└────────────────────┘           └────────────────┘
-         │
-         ▼
+└──┬───────────┬────────────┬──────────────┬────────────────────┬─┘
+   │           │            │              │                    │
+   ▼           ▼            ▼              ▼                    ▼
+┌─────────┐ ┌───────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
+│ Direct  │ │ Worker    │ │ Model Router │ │Budget Manager│ │   Token Tracker  │
+│Completi-│ │ Pool      │ │(model_router │ │(budget_mgr   │ │(token_tracker.py)│
+│on Client│ │(worker_   │ │     .py)     │ │   .py)       │ │                  │
+│(direct_ │ │ pool.py)  │ └──────────────┘ └──────┬───────┘ └──────────────────┘
+│completi-│ └─────┬─────┘                          │
+│on.py)   │       │                                │
+└────┬────┘       │                                ▼
+     │            ▼                       ┌────────────────┐
+     │   ┌────────────────────┐           │ SQLite Database│
+     │   │  Claude CLI Procs  │           │ (budgets.db)   │
+     │   │  (subprocess)      │           │ • Projects     │
+     │   │  • haiku workers   │           │ • Usage logs   │
+     │   │  • sonnet workers  │           │ • Budgets      │
+     │   │  • opus workers    │           └────────────────┘
+     │   └────────────────────┘
+     │
+     ▼
 ┌────────────────────┐
-│   Redis Cache      │
-│  (optional)        │
-│  • Prompt caching  │
-│  • Rate limiting   │
+│  Anthropic API     │
+│  (direct HTTP)     │
+│  • SDK client      │
+│  • ~50ms overhead  │
 └────────────────────┘
 ```
 
@@ -89,14 +92,18 @@ async def lifespan(app: FastAPI):
 **Purpose:** REST API endpoint definitions
 
 **Endpoints:**
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/v1/chat/completions` | POST | Single completion request |
-| `/v1/batch` | POST | Parallel batch processing |
-| `/v1/usage` | GET | Usage statistics |
-| `/v1/route` | POST | Model routing recommendation |
-| `/health` | GET | Health check |
-| `/` | GET | API information |
+| Endpoint | Method | Purpose | Execution Path |
+|----------|--------|---------|----------------|
+| `/v1/chat/completions` | POST | Single completion request | CLI always |
+| `/v1/process` | POST | AI Services compatible endpoint | SDK default, CLI opt-in |
+| `/v1/task` | POST | Agentic task execution | CLI always |
+| `/v1/batch` | POST | Parallel batch processing | CLI always |
+| `/v1/usage` | GET | Usage statistics | — |
+| `/v1/capabilities` | GET | List agents and skills | — |
+| `/v1/providers` | GET | List available providers | — |
+| `/v1/route` | POST | Model routing recommendation | — |
+| `/health` | GET | Health check | — |
+| `/` | GET | API information | — |
 
 **Flow for `/v1/chat/completions`:**
 ```
@@ -114,7 +121,35 @@ async def lifespan(app: FastAPI):
 - `429` - Budget exceeded
 - `500` - Task failed or service error
 
-### 3. Worker Pool (`src/worker_pool.py`)
+### 3. Dual Execution Paths
+
+The service supports two execution paths, selected per-request:
+
+**SDK Path (default for `/v1/process`):**
+```
+Request → DirectCompletionClient → Anthropic Messages API → Response
+```
+- Uses `src/direct_completion.py` with a persistent `anthropic.Anthropic()` client
+- ~50ms overhead + inference time
+- Simple prompt-to-completion only
+- No tools, agents, skills, MCP, or working directory context
+
+**CLI Path (`/v1/chat/completions`, `/v1/task`, or `/v1/process` with `use_cli: true`):**
+```
+Request → WorkerPool → Claude CLI subprocess → Response
+```
+- Spawns `claude -p` subprocess via worker pool
+- 3-8s cold start overhead + inference time
+- Full Claude Code features: tools, agents, skills, MCP servers, CLAUDE.md, project rules
+
+**Path selection by endpoint:**
+| Endpoint | Default Path | Override |
+|----------|-------------|----------|
+| `/v1/process` | SDK | Set `use_cli: true` for CLI |
+| `/v1/chat/completions` | CLI | None (always CLI) |
+| `/v1/task` | CLI | None (always CLI) |
+
+### 4. Worker Pool (`src/worker_pool.py`)
 
 **Purpose:** Manage concurrent Claude CLI processes
 
@@ -159,7 +194,7 @@ cost = (input_tokens / 1_000_000) * input_rate + \
        (output_tokens / 1_000_000) * output_rate
 ```
 
-### 4. Model Router (`src/model_router.py`)
+### 5. Model Router (`src/model_router.py`)
 
 **Purpose:** Intelligent model selection based on task complexity
 
@@ -197,7 +232,7 @@ def auto_select_model(prompt, context_size, budget_remaining):
 | "Review 50k lines" | 15k | 100k | Opus |
 | "Simple task" | 100 | 500 | Haiku (budget) |
 
-### 5. Budget Manager (`src/budget_manager.py`)
+### 6. Budget Manager (`src/budget_manager.py`)
 
 **Purpose:** Per-project budget tracking and enforcement
 
@@ -240,7 +275,7 @@ ON usage_log(project_id, timestamp);
 6. After completion → Track actual usage
 ```
 
-### 6. Token Tracker (`src/token_tracker.py`)
+### 7. Token Tracker (`src/token_tracker.py`)
 
 **Purpose:** Parse Claude CLI output and calculate costs
 
@@ -266,7 +301,7 @@ ON usage_log(project_id, timestamp);
 }
 ```
 
-### 7. Cache Layer (`src/cache.py`)
+### 8. Cache Layer (`src/cache.py`)
 
 **Purpose:** Redis-based caching for performance
 
@@ -282,7 +317,37 @@ ON usage_log(project_id, timestamp);
 
 ## Data Flow
 
-### Chat Completion Request
+### `/v1/process` Request (SDK Path — Default)
+
+```
+Client
+  │
+  │ POST /v1/process
+  │ { provider, model_name, user_message }
+  ▼
+API Router → Map model → Check budget
+  │
+  │ use_cli not set, SDK available
+  ▼
+DirectCompletionClient (src/direct_completion.py)
+  │
+  │ Persistent anthropic.Anthropic() client
+  │ anthropic.messages.create(model, messages)
+  ▼
+Anthropic API
+  │
+  │ ~50ms overhead + inference
+  ▼
+API Router
+  │
+  │ track_usage → convert_response
+  ▼
+Client
+  │
+  │ { content, model, provider, metadata }
+```
+
+### `/v1/chat/completions` Request (CLI Path)
 
 ```
 Client
@@ -305,23 +370,17 @@ Budget Manager
 Worker Pool
   │
   │ submit(prompt, model, project_id)
-  │ → task_id
-  ▼
-Monitor Thread
-  │
-  │ Start Claude CLI subprocess
-  │ claude -p "prompt" --model sonnet --output-format json
+  │ → starts task immediately if capacity available
   ▼
 Claude CLI Process
   │
-  │ Generate completion
-  │ Return JSON with usage stats
+  │ claude -p "prompt" --model sonnet --output-format json
+  │ Generate completion, return JSON with usage stats
   ▼
 Worker Pool
   │
-  │ Parse JSON (token_tracker)
-  │ Calculate cost
-  │ Store result
+  │ Parse JSON (token_tracker), calculate cost
+  │ Signal done_event
   ▼
 API Router
   │
@@ -471,28 +530,31 @@ worker_pool = WorkerPool(max_workers=20)
 
 ### Latency Breakdown
 
-Typical request (Sonnet, 100-token prompt):
+**SDK Path** (default for `/v1/process`, Sonnet, 100-token prompt):
 
-| Component | Time | % |
-|-----------|------|---|
-| API routing | 5ms | 1% |
-| Budget check | 10ms | 2% |
-| Queue wait | 0-5s | 0-50% |
-| Claude CLI startup | 500ms | 10% |
-| Model inference | 2-3s | 30-40% |
-| JSON parsing | 10ms | 2% |
-| Response formatting | 5ms | 1% |
-| **Total** | **3-8s** | **100%** |
+| Component | Time |
+|-----------|------|
+| API routing + budget check | ~15ms |
+| SDK client overhead | ~35ms |
+| Model inference | 1-3s |
+| **Total** | **~1-3s** |
 
-**Bottlenecks:**
-- Claude CLI startup time
-- Worker pool size (queue wait)
-- Model inference time
+**CLI Path** (`/v1/chat/completions`, `/v1/task`, Sonnet, 100-token prompt):
 
-**Optimizations:**
-- Increase `max_workers` to reduce queue time
-- Use Haiku for simple tasks (faster inference)
-- Redis caching for repeated prompts
+| Component | Time |
+|-----------|------|
+| API routing + budget check | ~15ms |
+| Worker pool dispatch | <1ms (direct start) |
+| Claude CLI cold start | 3-8s |
+| Model inference | 1-3s |
+| JSON parsing + response | ~15ms |
+| **Total** | **4-11s** |
+
+**Optimizations applied (commit 9172061):**
+- Event-based completion notifications (replaced 100ms polling)
+- Direct task start in `submit()` (eliminated 0-600ms queue delay)
+- SDK direct path (eliminated 3-8s CLI cold start for simple completions)
+- `run_in_executor` for all blocking calls (eliminated event loop serialization)
 
 ### Throughput
 

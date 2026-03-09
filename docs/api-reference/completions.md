@@ -2,6 +2,18 @@
 
 The Completions API provides simple text-to-text generation with Claude.
 
+## Execution Paths
+
+This endpoint (`/v1/chat/completions`) always uses the **CLI path**, which spawns a Claude CLI subprocess. This gives full access to Claude Code features (tools, agents, skills, MCP servers, working directory context) but incurs 3-8s of CLI cold start overhead.
+
+For simple prompt-to-completion without Claude Code features, use `/v1/process` instead, which defaults to the **SDK path** (~50ms overhead). See the [Execution Paths Guide](../guides/execution-paths.md) for details.
+
+| Endpoint | Default Path | Overhead | Features |
+|----------|-------------|----------|----------|
+| `/v1/chat/completions` | CLI always | 3-8s cold start | Full Claude Code (tools, agents, MCP) |
+| `/v1/process` | SDK (default) | ~50ms | Simple completions only |
+| `/v1/process` + `use_cli: true` | CLI | 3-8s cold start | Full Claude Code |
+
 ## Endpoint
 
 ```

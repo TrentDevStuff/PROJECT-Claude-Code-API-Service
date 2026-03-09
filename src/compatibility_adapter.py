@@ -12,13 +12,17 @@ Maps multi-provider requests to Claude Code models:
 - All others → sonnet (default)
 """
 
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
 from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class MessageRole(str, Enum):
     """Message role types"""
+
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
@@ -27,13 +31,14 @@ class MessageRole(str, Enum):
 
 class Message(BaseModel):
     """Message format matching AI services"""
-    id: Optional[str] = None
+
+    id: str | None = None
     role: MessageRole
     content: str
-    created_at: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-    tool_call_id: Optional[str] = None
-    tool_calls: Optional[List[Dict]] = None
+    created_at: str | None = None
+    metadata: dict[str, Any] | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[dict] | None = None
 
 
 class ProcessRequest(BaseModel):
@@ -42,33 +47,44 @@ class ProcessRequest(BaseModel):
 
     This mirrors the production ai-services API but only supports Claude Code.
     """
+
     # Required fields
-    provider: str = Field(..., description="AI provider (only 'anthropic' and 'claudecode' supported)")
+    provider: str = Field(
+        ..., description="AI provider (only 'anthropic' and 'claudecode' supported)"
+    )
     model_name: str = Field(..., description="Model name (maps to haiku/sonnet/opus)")
 
     # Message options (use ONE of these approaches)
-    messages: Optional[List[Message]] = Field(None, description="Full conversation history")
-    system_message: Optional[str] = Field(None, description="System prompt")
-    user_message: Optional[str] = Field(None, description="User input")
-    content: Optional[Any] = Field(None, description="Multimodal content (text only for Claude Code)")
+    messages: list[Message] | None = Field(None, description="Full conversation history")
+    system_message: str | None = Field(None, description="System prompt")
+    user_message: str | None = Field(None, description="User input")
+    content: Any | None = Field(None, description="Multimodal content (text only for Claude Code)")
 
     # Generation parameters
-    max_tokens: Optional[int] = Field(1000, description="Maximum tokens to generate")
-    temperature: Optional[float] = Field(0.7, description="Sampling temperature")
+    max_tokens: int | None = Field(1000, description="Maximum tokens to generate")
+    temperature: float | None = Field(0.7, description="Sampling temperature")
 
     # Processing modes
     async_processing: bool = Field(False, description="Use async task queue")
-    additional_params: Optional[Dict[str, Any]] = Field(None, description="Additional parameters (stream, etc.)")
+    additional_params: dict[str, Any] | None = Field(
+        None, description="Additional parameters (stream, etc.)"
+    )
 
     # Features (unsupported - will be ignored with warning)
-    tools: Optional[List[Dict]] = Field(None, description="Tool calling (not supported)")
-    tool_choice: Optional[str] = Field(None, description="Tool selection (not supported)")
-    output_schema: Optional[Dict] = Field(None, description="Structured outputs (not supported)")
-    media_content: Optional[List[Dict]] = Field(None, description="Multimodal content (not supported)")
-    memory: Optional[Dict] = Field(None, description="Memory management (not supported)")
+    tools: list[dict] | None = Field(None, description="Tool calling (not supported)")
+    tool_choice: str | None = Field(None, description="Tool selection (not supported)")
+    output_schema: dict | None = Field(None, description="Structured outputs (not supported)")
+    media_content: list[dict] | None = Field(None, description="Multimodal content (not supported)")
+    memory: dict | None = Field(None, description="Memory management (not supported)")
+
+    # Execution path control (SDK is default for speed; CLI needed for tools/agents/MCP)
+    use_cli: bool = Field(
+        False,
+        description="Use Claude CLI instead of SDK. Required for tools, agents, skills, MCP, working directory context.",
+    )
 
     # Metadata
-    project_id: Optional[str] = Field("default", description="Project identifier for budget tracking")
+    project_id: str | None = Field("default", description="Project identifier for budget tracking")
 
 
 class AIServiceResponse(BaseModel):
@@ -77,10 +93,11 @@ class AIServiceResponse(BaseModel):
 
     Mirrors production ai-services response structure.
     """
+
     content: str = Field(..., description="Response content")
     model: str = Field(..., description="Model used")
     provider: str = Field("claudecode", description="Provider name")
-    metadata: Dict[str, Any] = Field(..., description="Response metadata")
+    metadata: dict[str, Any] = Field(..., description="Response metadata")
 
 
 def map_model_to_claude(provider: str, model_name: str) -> str:
@@ -131,7 +148,7 @@ def map_model_to_claude(provider: str, model_name: str) -> str:
         return "sonnet"
 
 
-def convert_to_messages(request: ProcessRequest) -> List[Dict[str, str]]:
+def convert_to_messages(request: ProcessRequest) -> list[dict[str, str]]:
     """
     Convert AI services request to OpenAI-style messages.
 
@@ -142,10 +159,7 @@ def convert_to_messages(request: ProcessRequest) -> List[Dict[str, str]]:
     """
     # If messages provided, use them
     if request.messages:
-        return [
-            {"role": msg.role.value, "content": msg.content}
-            for msg in request.messages
-        ]
+        return [{"role": msg.role.value, "content": msg.content} for msg in request.messages]
 
     # Build from legacy fields
     messages = []
@@ -172,10 +186,7 @@ def convert_to_messages(request: ProcessRequest) -> List[Dict[str, str]]:
 
 
 def convert_response(
-    claude_response: Dict[str, Any],
-    original_provider: str,
-    original_model: str,
-    claude_model: str
+    claude_response: dict[str, Any], original_provider: str, original_model: str, claude_model: str
 ) -> AIServiceResponse:
     """
     Convert Claude Code response to AI services format.
@@ -199,6 +210,6 @@ def convert_response(
             "cost_usd": claude_response.get("cost", 0),
             "processing_time": 0,  # TODO: Track this
             "finish_reason": "stop",
-            "mapped_from": f"{original_provider}:{original_model} → claudecode:{claude_model}"
-        }
+            "mapped_from": f"{original_provider}:{original_model} → claudecode:{claude_model}",
+        },
     )

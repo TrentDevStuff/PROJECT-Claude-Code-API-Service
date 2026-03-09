@@ -2,6 +2,7 @@
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 pydantic==2.5.3
+pydantic-settings>=2.1.0
 
 # Async Support
 aiofiles==23.2.1
@@ -20,6 +21,9 @@ httpx==0.26.0
 # Code Quality
 black==23.12.1
 ruff==0.1.9
+
+# Compatibility
+eval_type_backport>=0.2.0  # Pydantic X|None syntax on Python <3.10
 
 # Utilities
 python-dotenv==1.0.0

@@ -3,14 +3,19 @@ Sandbox Manager
 Creates and manages isolated Docker containers for secure agentic task execution
 """
 
-import docker
-import tempfile
-import shutil
+from __future__ import annotations
+
+import logging
 import os
+import shutil
+import tempfile
 import time
-from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
+
+import docker
+
+logger = logging.getLogger(__name__)
 
 from .security_validator import SecurityValidator
 
@@ -18,6 +23,7 @@ from .security_validator import SecurityValidator
 @dataclass
 class SandboxConfig:
     """Configuration for a sandbox environment"""
+
     cpu_quota: int = 100000  # 1 CPU core (100000 = 100%)
     memory_limit: str = "1g"  # 1GB RAM
     memory_swap_limit: str = "1g"  # 1GB swap (total = 2GB)
@@ -30,10 +36,11 @@ class SandboxConfig:
 @dataclass
 class Sandbox:
     """Represents an active sandbox environment"""
+
     task_id: str
     container_id: str
     workspace_path: str
-    project_path: Optional[str]
+    project_path: str | None
     config: SandboxConfig
     created_at: float
 
@@ -60,24 +67,24 @@ class SandboxManager:
             self.docker_client.images.get(self.SANDBOX_IMAGE)
         except docker.errors.ImageNotFound:
             # Build the image from Dockerfile
-            dockerfile_path = Path(__file__).parent.parent / "docker"
+            dockerfile_path = Path(__file__).parent.parent / "docker-build"
             try:
-                print(f"Building sandbox image from {dockerfile_path}...")
+                logger.info("Building sandbox image from %s", dockerfile_path)
                 self.docker_client.images.build(
                     path=str(dockerfile_path),
                     dockerfile="Dockerfile.sandbox",
                     tag=self.SANDBOX_IMAGE,
-                    rm=True
+                    rm=True,
                 )
-                print(f"Sandbox image {self.SANDBOX_IMAGE} built successfully")
+                logger.info("Sandbox image %s built successfully", self.SANDBOX_IMAGE)
             except Exception as e:
                 raise RuntimeError(f"Failed to build sandbox image: {e}")
 
     def create_sandbox(
         self,
         task_id: str,
-        project_path: Optional[str] = None,
-        config: Optional[SandboxConfig] = None
+        project_path: str | None = None,
+        config: SandboxConfig | None = None,
     ) -> Sandbox:
         """
         Create an isolated Docker sandbox for a task
@@ -101,24 +108,14 @@ class SandboxManager:
 
         try:
             # Prepare volume mounts
-            volumes = {
-                workspace_path: {
-                    "bind": self.CONTAINER_WORKSPACE,
-                    "mode": "rw"
-                }
-            }
+            volumes = {workspace_path: {"bind": self.CONTAINER_WORKSPACE, "mode": "rw"}}
 
             # Mount project files read-only if provided
             if project_path:
-                volumes[project_path] = {
-                    "bind": self.CONTAINER_PROJECT,
-                    "mode": "ro"
-                }
+                volumes[project_path] = {"bind": self.CONTAINER_PROJECT, "mode": "ro"}
 
             # Create tmpfs for /tmp with noexec, nosuid
-            tmpfs = {
-                "/tmp": f"rw,noexec,nosuid,size={config.workspace_size_mb}m"
-            }
+            tmpfs = {"/tmp": f"rw,noexec,nosuid,size={config.workspace_size_mb}m"}
 
             # Configure network mode
             network_mode = "none" if not config.network_enabled else "bridge"
@@ -140,10 +137,7 @@ class SandboxManager:
                 tmpfs=tmpfs,
                 # Start in sleep mode - we'll exec commands into it
                 command="sleep infinity",
-                labels={
-                    "task_id": task_id,
-                    "managed_by": "claude-code-api"
-                }
+                labels={"task_id": task_id, "managed_by": "claude-code-api"},
             )
 
             return Sandbox(
@@ -152,7 +146,7 @@ class SandboxManager:
                 workspace_path=workspace_path,
                 project_path=project_path,
                 config=config,
-                created_at=time.time()
+                created_at=time.time(),
             )
 
         except Exception as e:
@@ -161,10 +155,7 @@ class SandboxManager:
             raise RuntimeError(f"Failed to create sandbox: {e}")
 
     def execute_command(
-        self,
-        sandbox: Sandbox,
-        command: str,
-        timeout: Optional[int] = None
+        self, sandbox: Sandbox, command: str, timeout: int | None = None
     ) -> tuple[int, str, str]:
         """
         Execute a command inside the sandbox with security validation
@@ -197,7 +188,7 @@ class SandboxManager:
                 f"/bin/bash -c '{command}'",
                 demux=True,
                 user="claude",
-                workdir=self.CONTAINER_WORKSPACE
+                workdir=self.CONTAINER_WORKSPACE,
             )
 
             # Demux output
@@ -211,11 +202,7 @@ class SandboxManager:
         except Exception as e:
             raise RuntimeError(f"Failed to execute command: {e}")
 
-    def validate_file_access(
-        self,
-        path: str,
-        operation: str = "read"
-    ) -> bool:
+    def validate_file_access(self, path: str, operation: str = "read") -> bool:
         """
         Validate if file access is allowed
 
@@ -226,7 +213,7 @@ class SandboxManager:
         Returns:
             True if access is allowed, False otherwise
         """
-        allow_write = (operation == "write")
+        allow_write = operation == "write"
         is_valid, _ = self.validator.validate_path(path, allow_write=allow_write)
         return is_valid
 
@@ -313,8 +300,7 @@ class SandboxManager:
         try:
             # Find all containers managed by this service
             containers = self.docker_client.containers.list(
-                all=True,
-                filters={"label": "managed_by=claude-code-api"}
+                all=True, filters={"label": "managed_by=claude-code-api"}
             )
 
             current_time = time.time()
@@ -323,6 +309,7 @@ class SandboxManager:
                 created = container.attrs["Created"]
                 # Parse ISO 8601 timestamp
                 import datetime
+
                 created_dt = datetime.datetime.fromisoformat(created.replace("Z", "+00:00"))
                 created_timestamp = created_dt.timestamp()
 
@@ -333,11 +320,12 @@ class SandboxManager:
                     count += 1
 
         except Exception as e:
-            print(f"Warning: Cleanup failed: {e}")
+            logger.warning("Sandbox cleanup failed: %s", e)
 
         return count
 
 
 class SecurityError(Exception):
     """Raised when a security validation fails"""
+
     pass

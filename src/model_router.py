@@ -32,8 +32,19 @@ def auto_select_model(prompt: str, context_size: int, budget_remaining: int) -> 
             return "haiku"
 
     # Complex reasoning keywords → sonnet (or opus if budget permits)
-    complex_keywords = ["analyze", "architect", "debug", "design", "implement", "optimize",
-                       "refactor", "review", "test", "diagnose", "strategy"]
+    complex_keywords = [
+        "analyze",
+        "architect",
+        "debug",
+        "design",
+        "implement",
+        "optimize",
+        "refactor",
+        "review",
+        "test",
+        "diagnose",
+        "strategy",
+    ]
     if any(kw in prompt_lower for kw in complex_keywords):
         if budget_remaining >= 5000:
             return "sonnet"

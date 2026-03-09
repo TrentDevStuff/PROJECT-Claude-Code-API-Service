@@ -8,11 +8,9 @@ Tests the full integration of:
 - Audit logging
 """
 
-import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
-from src.agentic_executor import AgenticTaskRequest, AgenticTaskResponse, ExecutionLogEntry, Artifact
+import pytest
 
 # Fixtures are now in conftest.py
 
@@ -28,9 +26,9 @@ class TestAgenticTaskEndpoint:
             json={
                 "description": "Analyze src/api.py for issues",
                 "allow_tools": ["Read", "Grep"],
-                "timeout": 60
+                "timeout": 60,
             },
-            headers={"Authorization": "Bearer test-key"}
+            headers={"Authorization": "Bearer test-key"},
         )
 
         assert response.status_code == 200
@@ -44,11 +42,7 @@ class TestAgenticTaskEndpoint:
     async def test_agentic_task_missing_description(self, client):
         """Test /v1/task endpoint with missing description."""
         response = client.post(
-            "/v1/task",
-            json={
-                "allow_tools": ["Read"]
-            },
-            headers={"Authorization": "Bearer test-key"}
+            "/v1/task", json={"allow_tools": ["Read"]}, headers={"Authorization": "Bearer test-key"}
         )
 
         assert response.status_code == 422  # Validation error
@@ -58,11 +52,8 @@ class TestAgenticTaskEndpoint:
         """Test /v1/task endpoint with invalid timeout."""
         response = client.post(
             "/v1/task",
-            json={
-                "description": "Test task",
-                "timeout": 1000  # Exceeds max 600s
-            },
-            headers={"Authorization": "Bearer test-key"}
+            json={"description": "Test task", "timeout": 1000},  # Exceeds max 600s
+            headers={"Authorization": "Bearer test-key"},
         )
 
         # Should be rejected by permission validation (403) or Pydantic validation (422)
@@ -79,11 +70,8 @@ class TestPermissionValidation:
         # This test assumes a limited API key exists that doesn't allow all agents
         response = client.post(
             "/v1/task",
-            json={
-                "description": "Test",
-                "allow_agents": ["forbidden-agent"]
-            },
-            headers={"Authorization": "Bearer limited-key"}
+            json={"description": "Test", "allow_agents": ["forbidden-agent"]},
+            headers={"Authorization": "Bearer limited-key"},
         )
 
         # Should either be 403 (if key exists and is limited) or 401 (if key doesn't exist)
@@ -96,11 +84,8 @@ class TestPermissionValidation:
         """Test that permission validation blocks forbidden tools."""
         response = client.post(
             "/v1/task",
-            json={
-                "description": "Test",
-                "allow_tools": ["Bash"]  # Assume Bash is restricted
-            },
-            headers={"Authorization": "Bearer limited-key"}
+            json={"description": "Test", "allow_tools": ["Bash"]},  # Assume Bash is restricted
+            headers={"Authorization": "Bearer limited-key"},
         )
 
         assert response.status_code in [401, 403]
@@ -110,11 +95,8 @@ class TestPermissionValidation:
         """Test that permission validation blocks excessive cost limits."""
         response = client.post(
             "/v1/task",
-            json={
-                "description": "Test",
-                "max_cost": 100.0  # Way too high
-            },
-            headers={"Authorization": "Bearer limited-key"}
+            json={"description": "Test", "max_cost": 100.0},  # Way too high
+            headers={"Authorization": "Bearer limited-key"},
         )
 
         assert response.status_code in [401, 403]
@@ -127,12 +109,14 @@ class TestWebSocketAgenticStreaming:
         """Test WebSocket streaming of agentic task."""
         with client.websocket_connect("/v1/stream") as ws:
             # Send agentic task request
-            ws.send_json({
-                "type": "agentic_task",
-                "api_key": "test-key",
-                "description": "Simple test task",
-                "allow_tools": ["Read"]
-            })
+            ws.send_json(
+                {
+                    "type": "agentic_task",
+                    "api_key": "test-key",
+                    "description": "Simple test task",
+                    "allow_tools": ["Read"],
+                }
+            )
 
             # Collect events
             events = []
@@ -154,10 +138,7 @@ class TestWebSocketAgenticStreaming:
     def test_websocket_agentic_task_missing_api_key(self, client):
         """Test WebSocket agentic task without API key."""
         with client.websocket_connect("/v1/stream") as ws:
-            ws.send_json({
-                "type": "agentic_task",
-                "description": "Test"
-            })
+            ws.send_json({"type": "agentic_task", "description": "Test"})
 
             message = ws.receive_json()
             assert message["type"] == "error"
@@ -166,12 +147,14 @@ class TestWebSocketAgenticStreaming:
     def test_websocket_agentic_task_permission_denied(self, client):
         """Test WebSocket agentic task with insufficient permissions."""
         with client.websocket_connect("/v1/stream") as ws:
-            ws.send_json({
-                "type": "agentic_task",
-                "api_key": "limited-key",
-                "description": "Test",
-                "allow_agents": ["forbidden-agent"]
-            })
+            ws.send_json(
+                {
+                    "type": "agentic_task",
+                    "api_key": "limited-key",
+                    "description": "Test",
+                    "allow_agents": ["forbidden-agent"],
+                }
+            )
 
             message = ws.receive_json()
             # Should receive error about permission denied
@@ -193,11 +176,8 @@ class TestAuditLogging:
 
             response = client.post(
                 "/v1/task",
-                json={
-                    "description": "Test task",
-                    "allow_tools": ["Read"]
-                },
-                headers={"Authorization": "Bearer test-key"}
+                json={"description": "Test task", "allow_tools": ["Read"]},
+                headers={"Authorization": "Bearer test-key"},
             )
 
             # Verify audit logging was called (if successful)
@@ -216,11 +196,8 @@ class TestAuditLogging:
 
             response = client.post(
                 "/v1/task",
-                json={
-                    "description": "Test",
-                    "allow_agents": ["forbidden-agent"]
-                },
-                headers={"Authorization": "Bearer limited-key"}
+                json={"description": "Test", "allow_agents": ["forbidden-agent"]},
+                headers={"Authorization": "Bearer limited-key"},
             )
 
             # If permission denied, security event should be logged
@@ -278,9 +255,9 @@ class TestIntegrationFlow:
                 "description": "Analyze test.py and report issues",
                 "allow_tools": ["Read", "Grep"],
                 "timeout": 120,
-                "max_cost": 0.50
+                "max_cost": 0.50,
             },
-            headers={"Authorization": "Bearer test-key"}
+            headers={"Authorization": "Bearer test-key"},
         )
 
         # 2. Verify response
@@ -303,21 +280,20 @@ class TestIntegrationFlow:
         # Make REST request
         rest_response = client.post(
             "/v1/task",
-            json={
-                "description": "Simple task",
-                "allow_tools": ["Read"]
-            },
-            headers={"Authorization": "Bearer test-key"}
+            json={"description": "Simple task", "allow_tools": ["Read"]},
+            headers={"Authorization": "Bearer test-key"},
         )
 
         # Make WebSocket request
         with client.websocket_connect("/v1/stream") as ws:
-            ws.send_json({
-                "type": "agentic_task",
-                "api_key": "test-key",
-                "description": "Simple task",
-                "allow_tools": ["Read"]
-            })
+            ws.send_json(
+                {
+                    "type": "agentic_task",
+                    "api_key": "test-key",
+                    "description": "Simple task",
+                    "allow_tools": ["Read"],
+                }
+            )
 
             ws_events = []
             while True:
@@ -330,7 +306,7 @@ class TestIntegrationFlow:
         if rest_response.status_code == 200:
             if ws_events[-1]["type"] != "result":
                 # Debug: print the actual error
-                print(f"\nREST succeeded (200) but WebSocket failed.")
+                print("\nREST succeeded (200) but WebSocket failed.")
                 print(f"WebSocket events: {ws_events}")
                 print(f"Last event: {ws_events[-1]}")
             assert ws_events[-1]["type"] == "result"

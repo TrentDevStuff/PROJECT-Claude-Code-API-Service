@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "local-mcp": {
+      "type": "http",
+      "url": "http://localhost:3001",
+      "timeout": 300
+    }
+  }
+}

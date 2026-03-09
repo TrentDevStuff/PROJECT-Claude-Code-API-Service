@@ -1,8 +1,8 @@
 """Token tracking and cost calculation for Claude API usage."""
 
 import json
-from typing import Dict, Any, Optional
 from decimal import Decimal
+from typing import Any
 
 
 class TokenTracker:
@@ -15,22 +15,13 @@ class TokenTracker:
 
     # Model pricing per 1K tokens (USD)
     PRICING = {
-        "haiku": {
-            "input": Decimal("0.00025"),
-            "output": Decimal("0.00125")
-        },
-        "sonnet": {
-            "input": Decimal("0.003"),
-            "output": Decimal("0.015")
-        },
-        "opus": {
-            "input": Decimal("0.015"),
-            "output": Decimal("0.075")
-        }
+        "haiku": {"input": Decimal("0.00025"), "output": Decimal("0.00125")},
+        "sonnet": {"input": Decimal("0.003"), "output": Decimal("0.015")},
+        "opus": {"input": Decimal("0.015"), "output": Decimal("0.075")},
     }
 
     @classmethod
-    def parse_claude_output(cls, json_str: str) -> Dict[str, Any]:
+    def parse_claude_output(cls, json_str: str) -> dict[str, Any]:
         """
         Parse Claude CLI JSON output to extract token usage and cost.
 
@@ -99,7 +90,7 @@ class TokenTracker:
             "total_tokens": total_tokens,
             "model": model_full_name,
             "model_tier": model_tier,
-            "cost_usd": float(cost_usd)
+            "cost_usd": float(cost_usd),
         }
 
     @classmethod
@@ -128,12 +119,7 @@ class TokenTracker:
             raise ValueError(f"Unknown model tier in model name: {model_name}")
 
     @classmethod
-    def calculate_cost(
-        cls,
-        input_tokens: int,
-        output_tokens: int,
-        model: str
-    ) -> Decimal:
+    def calculate_cost(cls, input_tokens: int, output_tokens: int, model: str) -> Decimal:
         """
         Calculate cost in USD for token usage.
 
@@ -152,8 +138,7 @@ class TokenTracker:
 
         if model_lower not in cls.PRICING:
             raise ValueError(
-                f"Unknown model: {model}. "
-                f"Valid models: {', '.join(cls.PRICING.keys())}"
+                f"Unknown model: {model}. " f"Valid models: {', '.join(cls.PRICING.keys())}"
             )
 
         pricing = cls.PRICING[model_lower]

@@ -4,30 +4,30 @@ Tests for Claude API Client Library
 Comprehensive tests for both synchronous and asynchronous client operations.
 """
 
-import pytest
+from unittest.mock import AsyncMock, Mock, patch
+
 import httpx
-from unittest.mock import Mock, patch, AsyncMock
-import asyncio
+import pytest
 
 from client import (
-    ClaudeClient,
     AsyncClaudeClient,
-    Model,
-    Response,
-    Usage,
-    BatchResponse,
-    UsageStats,
-    ClaudeAPIError,
     AuthenticationError,
+    BatchResponse,
     BudgetExceededError,
-    TimeoutError as ClientTimeoutError,
+    ClaudeClient,
+    Model,
     RateLimitError,
+    Response,
+    UsageStats,
 )
-
+from client import (
+    TimeoutError as ClientTimeoutError,
+)
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_response_data():
@@ -36,13 +36,9 @@ def mock_response_data():
         "id": "task-123",
         "model": "sonnet",
         "content": "This is a test response",
-        "usage": {
-            "input_tokens": 10,
-            "output_tokens": 20,
-            "total_tokens": 30
-        },
+        "usage": {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30},
         "cost": 0.0015,
-        "project_id": "test-project"
+        "project_id": "test-project",
     }
 
 
@@ -60,7 +56,7 @@ def mock_batch_response_data():
                 "status": "completed",
                 "content": "Hi there!",
                 "usage": {"input_tokens": 5, "output_tokens": 10, "total_tokens": 15},
-                "cost": 0.0005
+                "cost": 0.0005,
             },
             {
                 "id": "1",
@@ -68,17 +64,12 @@ def mock_batch_response_data():
                 "status": "completed",
                 "content": "1, 2, 3, 4, 5",
                 "usage": {"input_tokens": 8, "output_tokens": 12, "total_tokens": 20},
-                "cost": 0.0007
+                "cost": 0.0007,
             },
-            {
-                "id": "2",
-                "prompt": "Error prompt",
-                "status": "failed",
-                "error": "Task timeout"
-            }
+            {"id": "2", "prompt": "Error prompt", "status": "failed", "error": "Task timeout"},
         ],
         "total_cost": 0.0012,
-        "total_tokens": 35
+        "total_tokens": 35,
     }
 
 
@@ -92,16 +83,17 @@ def mock_usage_data():
         "total_cost": 0.05,
         "by_model": {
             "haiku": {"tokens": 500, "cost": 0.01},
-            "sonnet": {"tokens": 500, "cost": 0.04}
+            "sonnet": {"tokens": 500, "cost": 0.04},
         },
         "limit": 10000,
-        "remaining": 9000
+        "remaining": 9000,
     }
 
 
 # ============================================================================
 # Synchronous Client Tests
 # ============================================================================
+
 
 class TestClaudeClient:
     """Tests for synchronous ClaudeClient."""
@@ -121,7 +113,7 @@ class TestClaudeClient:
             api_key="test-key",
             project_id="my-project",
             timeout=60.0,
-            max_retries=5
+            max_retries=5,
         )
         assert client.base_url == "http://example.com:8000"
         assert client.api_key == "test-key"
@@ -136,7 +128,7 @@ class TestClaudeClient:
         with ClaudeClient() as client:
             assert client.client is not None
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_client_complete(self, mock_request, mock_response_data):
         """Test successful completion request."""
         # Mock successful response
@@ -165,7 +157,7 @@ class TestClaudeClient:
             assert call_args[0][0] == "POST"
             assert call_args[0][1] == "/v1/chat/completions"
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_client_complete_with_model(self, mock_request, mock_response_data):
         """Test completion with explicit model selection."""
         mock_response = Mock()
@@ -182,7 +174,7 @@ class TestClaudeClient:
             request_data = call_args[1]["json"]
             assert request_data["model"] == "haiku"
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_client_stream(self, mock_request, mock_response_data):
         """Test streaming (currently falls back to complete)."""
         mock_response = Mock()
@@ -198,7 +190,7 @@ class TestClaudeClient:
             assert len(chunks) == 1
             assert chunks[0] == "This is a test response"
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_client_batch(self, mock_request, mock_batch_response_data):
         """Test batch processing."""
         mock_response = Mock()
@@ -226,7 +218,7 @@ class TestClaudeClient:
             assert results.results[2].status == "failed"
             assert results.results[2].error == "Task timeout"
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_client_get_usage(self, mock_request, mock_usage_data):
         """Test usage statistics retrieval."""
         mock_response = Mock()
@@ -249,7 +241,7 @@ class TestClaudeClient:
             assert "haiku" in stats.by_model
             assert "sonnet" in stats.by_model
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_client_health(self, mock_request):
         """Test health check."""
         mock_response = Mock()
@@ -257,7 +249,7 @@ class TestClaudeClient:
         mock_response.json.return_value = {
             "status": "ok",
             "version": "0.1.0",
-            "services": {"worker_pool": "running"}
+            "services": {"worker_pool": "running"},
         }
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
@@ -268,7 +260,7 @@ class TestClaudeClient:
             assert health["status"] == "ok"
             assert health["version"] == "0.1.0"
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_error_handling_authentication(self, mock_request):
         """Test authentication error handling."""
         mock_response = Mock()
@@ -276,11 +268,10 @@ class TestClaudeClient:
         mock_response.json.return_value = {"detail": "Unauthorized"}
         mock_request.return_value = mock_response
 
-        with ClaudeClient() as client:
-            with pytest.raises(AuthenticationError):
-                client.complete("Test prompt")
+        with ClaudeClient() as client, pytest.raises(AuthenticationError):
+            client.complete("Test prompt")
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_error_handling_budget_exceeded(self, mock_request):
         """Test budget exceeded error handling."""
         mock_response = Mock()
@@ -288,11 +279,10 @@ class TestClaudeClient:
         mock_response.json.return_value = {"detail": "Budget exceeded for project test"}
         mock_request.return_value = mock_response
 
-        with ClaudeClient() as client:
-            with pytest.raises(BudgetExceededError):
-                client.complete("Test prompt")
+        with ClaudeClient() as client, pytest.raises(BudgetExceededError):
+            client.complete("Test prompt")
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_error_handling_rate_limit(self, mock_request):
         """Test rate limit error handling."""
         mock_response = Mock()
@@ -300,12 +290,11 @@ class TestClaudeClient:
         mock_response.json.return_value = {"detail": "Too many requests"}
         mock_request.return_value = mock_response
 
-        with ClaudeClient() as client:
-            with pytest.raises(RateLimitError):
-                client.complete("Test prompt")
+        with ClaudeClient() as client, pytest.raises(RateLimitError):
+            client.complete("Test prompt")
 
-    @patch('httpx.Client.request')
-    @patch('time.sleep')
+    @patch("httpx.Client.request")
+    @patch("time.sleep")
     def test_retry_logic(self, mock_sleep, mock_request, mock_response_data):
         """Test automatic retry on server errors."""
         # First two calls fail, third succeeds
@@ -318,11 +307,7 @@ class TestClaudeClient:
         mock_response_success.json.return_value = mock_response_data
         mock_response_success.raise_for_status = Mock()
 
-        mock_request.side_effect = [
-            mock_response_error,
-            mock_response_error,
-            mock_response_success
-        ]
+        mock_request.side_effect = [mock_response_error, mock_response_error, mock_response_success]
 
         with ClaudeClient(max_retries=3) as client:
             response = client.complete("Test prompt")
@@ -334,19 +319,19 @@ class TestClaudeClient:
             assert mock_request.call_count == 3
             assert mock_sleep.call_count == 2
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_timeout_error(self, mock_request):
         """Test timeout error handling."""
         mock_request.side_effect = httpx.TimeoutException("Request timeout")
 
-        with ClaudeClient(max_retries=1) as client:
-            with pytest.raises(ClientTimeoutError):
-                client.complete("Test prompt")
+        with ClaudeClient(max_retries=1) as client, pytest.raises(ClientTimeoutError):
+            client.complete("Test prompt")
 
 
 # ============================================================================
 # Asynchronous Client Tests
 # ============================================================================
+
 
 class TestAsyncClaudeClient:
     """Tests for asynchronous AsyncClaudeClient."""
@@ -366,7 +351,7 @@ class TestAsyncClaudeClient:
             assert client.client is not None
 
     @pytest.mark.asyncio
-    @patch('httpx.AsyncClient.request', new_callable=AsyncMock)
+    @patch("httpx.AsyncClient.request", new_callable=AsyncMock)
     async def test_async_client_complete(self, mock_request, mock_response_data):
         """Test async completion request."""
         mock_response = Mock()
@@ -384,7 +369,7 @@ class TestAsyncClaudeClient:
             assert response.content == "This is a test response"
 
     @pytest.mark.asyncio
-    @patch('httpx.AsyncClient.request', new_callable=AsyncMock)
+    @patch("httpx.AsyncClient.request", new_callable=AsyncMock)
     async def test_async_client_stream(self, mock_request, mock_response_data):
         """Test async streaming."""
         mock_response = Mock()
@@ -402,7 +387,7 @@ class TestAsyncClaudeClient:
             assert chunks[0] == "This is a test response"
 
     @pytest.mark.asyncio
-    @patch('httpx.AsyncClient.request', new_callable=AsyncMock)
+    @patch("httpx.AsyncClient.request", new_callable=AsyncMock)
     async def test_async_client_batch(self, mock_request, mock_batch_response_data):
         """Test async batch processing."""
         mock_response = Mock()
@@ -420,7 +405,7 @@ class TestAsyncClaudeClient:
             assert results.failed == 1
 
     @pytest.mark.asyncio
-    @patch('httpx.AsyncClient.request', new_callable=AsyncMock)
+    @patch("httpx.AsyncClient.request", new_callable=AsyncMock)
     async def test_async_client_get_usage(self, mock_request, mock_usage_data):
         """Test async usage statistics retrieval."""
         mock_response = Mock()
@@ -436,7 +421,7 @@ class TestAsyncClaudeClient:
             assert stats.total_tokens == 1000
 
     @pytest.mark.asyncio
-    @patch('httpx.AsyncClient.request', new_callable=AsyncMock)
+    @patch("httpx.AsyncClient.request", new_callable=AsyncMock)
     async def test_async_error_handling(self, mock_request):
         """Test async error handling."""
         mock_response = Mock()
@@ -449,8 +434,8 @@ class TestAsyncClaudeClient:
                 await client.complete("Test prompt")
 
     @pytest.mark.asyncio
-    @patch('httpx.AsyncClient.request', new_callable=AsyncMock)
-    @patch('asyncio.sleep', new_callable=AsyncMock)
+    @patch("httpx.AsyncClient.request", new_callable=AsyncMock)
+    @patch("asyncio.sleep", new_callable=AsyncMock)
     async def test_async_retry_logic(self, mock_sleep, mock_request, mock_response_data):
         """Test async automatic retry logic."""
         mock_response_error = Mock()
@@ -461,10 +446,7 @@ class TestAsyncClaudeClient:
         mock_response_success.json.return_value = mock_response_data
         mock_response_success.raise_for_status = Mock()
 
-        mock_request.side_effect = [
-            mock_response_error,
-            mock_response_success
-        ]
+        mock_request.side_effect = [mock_response_error, mock_response_success]
 
         async with AsyncClaudeClient(max_retries=3) as client:
             response = await client.complete("Test prompt")
@@ -478,10 +460,11 @@ class TestAsyncClaudeClient:
 # Integration-like Tests (without real API)
 # ============================================================================
 
+
 class TestClientIntegration:
     """Integration-style tests."""
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_multiple_requests_same_client(self, mock_request, mock_response_data):
         """Test making multiple requests with same client instance."""
         mock_response = Mock()
@@ -501,9 +484,10 @@ class TestClientIntegration:
             assert response3.content == "This is a test response"
             assert mock_request.call_count == 3
 
-    @patch('httpx.Client.request')
+    @patch("httpx.Client.request")
     def test_mixed_operations(self, mock_request, mock_response_data, mock_usage_data):
         """Test mixing different types of operations."""
+
         # Return different responses based on endpoint
         def mock_request_side_effect(method, endpoint, **kwargs):
             mock_response = Mock()

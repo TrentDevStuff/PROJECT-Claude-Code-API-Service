@@ -1,21 +1,14 @@
 """Task management commands"""
 
-import typer
-from typing import Optional
-from rich.console import Console
-from rich.table import Table
+from __future__ import annotations
 
-from ..api_client import APIClient
+import typer
+from rich.console import Console
+
 from ..utils import (
-    print_success,
     print_error,
-    print_warning,
     print_info,
-    print_section,
-    format_cost,
-    format_tokens,
-    format_duration,
-    format_timestamp,
+    print_warning,
 )
 
 app = typer.Typer(help="Task management")
@@ -24,7 +17,9 @@ console = Console()
 
 @app.command()
 def list(
-    status: Optional[str] = typer.Option(None, help="Filter by status (pending, running, completed, failed)"),
+    status: str | None = typer.Option(
+        None, help="Filter by status (pending, running, completed, failed)"
+    ),
     limit: int = typer.Option(20, help="Number of tasks to show"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
@@ -55,7 +50,7 @@ def get(
 
     try:
         # The /v1/task endpoint returns task results, but there's no GET endpoint for task details
-        print_warning(f"Task retrieval endpoint not yet implemented in API")
+        print_warning("Task retrieval endpoint not yet implemented in API")
         print_info(f"Task ID: {task_id}")
         print_info("This feature requires API enhancement to query task by ID")
 

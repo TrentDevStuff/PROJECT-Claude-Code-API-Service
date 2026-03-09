@@ -2,7 +2,6 @@
 Tests for SecurityValidator
 """
 
-import pytest
 from src.security_validator import SecurityValidator
 
 
@@ -123,7 +122,7 @@ class TestSecurityValidator:
             "API_KEY": "secret123",
             "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
             "HOME": "/home/user",
-            "SECRET_KEY": "verysecret"
+            "SECRET_KEY": "verysecret",
         }
 
         sanitized = self.validator.sanitize_environment(env)

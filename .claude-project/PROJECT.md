@@ -1,1 +1,1 @@
-/Users/trent/.claude/orchestration/projects/claude-code-api-service/PROJECT.md
+/Users/tpeterson/.claude/orchestration/projects/PROJECT-Claude-Code-API-Service/PROJECT.md

@@ -9,19 +9,19 @@ Tests:
 - FastAPI dependency integration
 """
 
-import pytest
-import tempfile
 import os
-from datetime import datetime, timedelta
+import tempfile
+
+import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
 from src.auth import AuthManager, initialize_auth, verify_api_key
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def auth_manager():
@@ -46,6 +46,7 @@ def test_api_key(auth_manager):
 # ============================================================================
 # Test: Key Generation
 # ============================================================================
+
 
 def test_generate_key(auth_manager):
     """Test API key generation."""
@@ -82,6 +83,7 @@ def test_generate_multiple_keys(auth_manager):
 # Test: Key Validation
 # ============================================================================
 
+
 def test_validate_key(auth_manager, test_api_key):
     """Test valid key validation."""
     is_valid, project_id = auth_manager.validate_key(test_api_key)
@@ -110,6 +112,7 @@ def test_malformed_key(auth_manager):
 # Test: Key Revocation
 # ============================================================================
 
+
 def test_revoked_key(auth_manager, test_api_key):
     """Test that revoked keys are not valid."""
     # Key should be valid initially
@@ -135,6 +138,7 @@ def test_revoke_nonexistent_key(auth_manager):
 # ============================================================================
 # Test: Rate Limiting
 # ============================================================================
+
 
 def test_rate_limiting(auth_manager):
     """Test basic rate limiting."""
@@ -198,6 +202,7 @@ def test_rate_limit_invalid_key(auth_manager):
 # Test: Key Info
 # ============================================================================
 
+
 def test_get_key_info(auth_manager, test_api_key):
     """Test retrieving key information."""
     info = auth_manager.get_key_info(test_api_key)
@@ -234,6 +239,7 @@ def test_get_key_info_after_use(auth_manager, test_api_key):
 # Test: Cleanup
 # ============================================================================
 
+
 def test_cleanup_old_rate_limits(auth_manager):
     """Test cleanup of old rate limit records."""
     api_key = auth_manager.generate_key(project_id="test", rate_limit=10)
@@ -253,6 +259,7 @@ def test_cleanup_old_rate_limits(auth_manager):
 # ============================================================================
 # Test: FastAPI Dependency
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_verify_api_key_valid(auth_manager):
@@ -334,6 +341,7 @@ async def test_verify_api_key_not_initialized():
 # ============================================================================
 # Test: Edge Cases
 # ============================================================================
+
 
 def test_concurrent_rate_limiting(auth_manager):
     """Test rate limiting with concurrent requests in same window."""

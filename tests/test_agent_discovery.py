@@ -2,12 +2,11 @@
 Tests for agent and skill discovery.
 """
 
-import pytest
-import tempfile
 import json
-from pathlib import Path
 
-from src.agent_discovery import AgentSkillDiscovery, AgentInfo, SkillInfo
+import pytest
+
+from src.agent_discovery import AgentSkillDiscovery
 
 
 @pytest.fixture
@@ -21,7 +20,8 @@ def test_claude_dir(tmp_path):
     skills_dir.mkdir(parents=True)
 
     # Create test agent
-    (agents_dir / "test-agent.md").write_text("""---
+    (agents_dir / "test-agent.md").write_text(
+        """---
 description: "Test agent for testing"
 tools: ["Read", "Write"]
 model: "sonnet"
@@ -30,27 +30,36 @@ model: "sonnet"
 # Test Agent
 
 This is a test agent.
-""")
+"""
+    )
 
     # Create test skill
     skill_dir = skills_dir / "test-skill"
     skill_dir.mkdir()
-    (skill_dir / "skill.json").write_text(json.dumps({
-        "name": "test-skill",
-        "description": "Test skill for testing",
-        "command": "test-skill",
-        "user_interface": None
-    }))
+    (skill_dir / "skill.json").write_text(
+        json.dumps(
+            {
+                "name": "test-skill",
+                "description": "Test skill for testing",
+                "command": "test-skill",
+                "user_interface": None,
+            }
+        )
+    )
 
     # Create agent-wrapped skill
     wrapped_skill_dir = skills_dir / "wrapped-skill"
     wrapped_skill_dir.mkdir()
-    (wrapped_skill_dir / "skill.json").write_text(json.dumps({
-        "name": "wrapped-skill",
-        "description": "Wrapped skill",
-        "command": "wrapped-skill",
-        "user_interface": {"type": "agent-wrapped"}
-    }))
+    (wrapped_skill_dir / "skill.json").write_text(
+        json.dumps(
+            {
+                "name": "wrapped-skill",
+                "description": "Wrapped skill",
+                "command": "wrapped-skill",
+                "user_interface": {"type": "agent-wrapped"},
+            }
+        )
+    )
 
     return claude_dir
 
@@ -170,12 +179,14 @@ class TestAgentSkillDiscovery:
         agents1 = discovery.discover_agents()
 
         # Add new agent
-        (test_claude_dir / "agents" / "new-agent.md").write_text("""---
+        (test_claude_dir / "agents" / "new-agent.md").write_text(
+            """---
 description: "New agent"
 tools: []
 model: "haiku"
 ---
-""")
+"""
+        )
 
         # Without refresh - should not see new agent
         agents2 = discovery.discover_agents()

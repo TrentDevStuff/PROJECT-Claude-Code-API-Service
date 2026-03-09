@@ -1,5 +1,5 @@
 ---
-project_id: claude-code-api-service
+project_id: PROJECT-Claude-Code-API-Service
 project_name: Claude Code API Service
 created: '2026-01-30T14:00:00Z'
 visibility: personal
@@ -16,10 +16,10 @@ metadata:
     - fastapi
     - llm
     - service
-  github: https://github.com/TrentDevStuff/claude-code-orchestrator
+  github: https://github.com/TrentDevStuff/PROJECT-Claude-Code-API-Service
 
 orchestration:
-  project_file: /Users/trent/.claude/orchestration/projects/claude-code-api-service/PROJECT.md
+  project_file: ~/.claude/orchestration/projects/PROJECT-Claude-Code-API-Service/PROJECT.md
   goals: []
 
 ports:
@@ -37,5 +37,9 @@ notes: |
   - Intelligent model routing (Haiku/Sonnet/Opus)
   - Token tracking and budget management
   - Parallel execution worker pool
-  - Python client library
+  - Agent/skill discovery and integration (25 agents, 17+ skills)
+  - Python client library + CLI tool (claude-api)
+  - Agentic task execution (/v1/task endpoint)
+  - Permission profiles and audit logging
   - Cost optimization
+  - 228 tests, 80%+ coverage

@@ -9,11 +9,12 @@ Tests cover:
 - Edge cases
 """
 
-import json
 import time
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from redis.exceptions import RedisError, ConnectionError as RedisConnectionError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import RedisError
 
 from src.cache import RedisCache
 
@@ -57,7 +58,7 @@ def mock_redis():
         return len(mock._queue)
 
     def mock_keys(pattern):
-        return [k for k in mock._storage.keys() if pattern.replace("*", "") in k]
+        return [k for k in mock._storage if pattern.replace("*", "") in k]
 
     def mock_delete(*keys):
         for key in keys:
@@ -82,7 +83,7 @@ def mock_redis():
 @pytest.fixture
 def cache_with_mock(mock_redis):
     """Create a RedisCache instance with mocked Redis client."""
-    with patch('redis.Redis', return_value=mock_redis):
+    with patch("redis.Redis", return_value=mock_redis):
         cache = RedisCache()
         return cache
 
@@ -90,7 +91,7 @@ def cache_with_mock(mock_redis):
 @pytest.fixture
 def cache_disconnected():
     """Create a RedisCache instance that fails to connect."""
-    with patch('redis.Redis') as mock_redis_class:
+    with patch("redis.Redis") as mock_redis_class:
         mock_client = Mock()
         mock_client.ping.side_effect = RedisConnectionError("Connection refused")
         mock_redis_class.return_value = mock_client
@@ -106,7 +107,7 @@ def test_cache_and_retrieve(cache_with_mock):
     response = {
         "completion": "Hello, world!",
         "usage": {"input_tokens": 10, "output_tokens": 5},
-        "cost": 0.001
+        "cost": 0.001,
     }
 
     # Cache the response
@@ -242,6 +243,7 @@ def test_redis_error_handling(cache_with_mock):
 
 def test_json_encoding_error(cache_with_mock):
     """Test handling of JSON encoding errors."""
+
     # Create an object that can't be JSON serialized
     class NonSerializable:
         pass

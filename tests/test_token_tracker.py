@@ -1,8 +1,10 @@
 """Tests for TokenTracker class."""
 
-import pytest
 import json
 from decimal import Decimal
+
+import pytest
+
 from src.token_tracker import TokenTracker
 
 
@@ -11,13 +13,12 @@ class TestParseClaudeOutput:
 
     def test_parse_valid_haiku_output(self):
         """Test parsing valid Haiku model output."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 1000,
-                "output_tokens": 500
-            },
-            "model": "claude-3-haiku-20240307"
-        })
+        json_output = json.dumps(
+            {
+                "usage": {"input_tokens": 1000, "output_tokens": 500},
+                "model": "claude-3-haiku-20240307",
+            }
+        )
 
         result = TokenTracker.parse_claude_output(json_output)
 
@@ -31,13 +32,12 @@ class TestParseClaudeOutput:
 
     def test_parse_valid_sonnet_output(self):
         """Test parsing valid Sonnet model output."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 2000,
-                "output_tokens": 1000
-            },
-            "model": "claude-3-sonnet-20240229"
-        })
+        json_output = json.dumps(
+            {
+                "usage": {"input_tokens": 2000, "output_tokens": 1000},
+                "model": "claude-3-sonnet-20240229",
+            }
+        )
 
         result = TokenTracker.parse_claude_output(json_output)
 
@@ -50,13 +50,12 @@ class TestParseClaudeOutput:
 
     def test_parse_valid_opus_output(self):
         """Test parsing valid Opus model output."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 500,
-                "output_tokens": 250
-            },
-            "model": "claude-3-opus-20240229"
-        })
+        json_output = json.dumps(
+            {
+                "usage": {"input_tokens": 500, "output_tokens": 250},
+                "model": "claude-3-opus-20240229",
+            }
+        )
 
         result = TokenTracker.parse_claude_output(json_output)
 
@@ -69,13 +68,9 @@ class TestParseClaudeOutput:
 
     def test_parse_zero_tokens(self):
         """Test parsing output with zero tokens."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 0,
-                "output_tokens": 0
-            },
-            "model": "claude-3-haiku-20240307"
-        })
+        json_output = json.dumps(
+            {"usage": {"input_tokens": 0, "output_tokens": 0}, "model": "claude-3-haiku-20240307"}
+        )
 
         result = TokenTracker.parse_claude_output(json_output)
 
@@ -86,13 +81,12 @@ class TestParseClaudeOutput:
 
     def test_parse_large_token_counts(self):
         """Test parsing with large token counts."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 100000,
-                "output_tokens": 50000
-            },
-            "model": "claude-3-sonnet-20240229"
-        })
+        json_output = json.dumps(
+            {
+                "usage": {"input_tokens": 100000, "output_tokens": 50000},
+                "model": "claude-3-sonnet-20240229",
+            }
+        )
 
         result = TokenTracker.parse_claude_output(json_output)
 
@@ -114,58 +108,41 @@ class TestInvalidJsonHandling:
 
     def test_missing_usage_field(self):
         """Test handling of missing usage field."""
-        json_output = json.dumps({
-            "model": "claude-3-haiku-20240307"
-        })
+        json_output = json.dumps({"model": "claude-3-haiku-20240307"})
 
         with pytest.raises(KeyError, match="Missing 'usage' field"):
             TokenTracker.parse_claude_output(json_output)
 
     def test_missing_input_tokens(self):
         """Test handling of missing input_tokens."""
-        json_output = json.dumps({
-            "usage": {
-                "output_tokens": 500
-            },
-            "model": "claude-3-haiku-20240307"
-        })
+        json_output = json.dumps(
+            {"usage": {"output_tokens": 500}, "model": "claude-3-haiku-20240307"}
+        )
 
         with pytest.raises(KeyError, match="Missing 'input_tokens'"):
             TokenTracker.parse_claude_output(json_output)
 
     def test_missing_output_tokens(self):
         """Test handling of missing output_tokens."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 1000
-            },
-            "model": "claude-3-haiku-20240307"
-        })
+        json_output = json.dumps(
+            {"usage": {"input_tokens": 1000}, "model": "claude-3-haiku-20240307"}
+        )
 
         with pytest.raises(KeyError, match="Missing 'output_tokens'"):
             TokenTracker.parse_claude_output(json_output)
 
     def test_missing_model_field(self):
         """Test handling of missing model field."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 1000,
-                "output_tokens": 500
-            }
-        })
+        json_output = json.dumps({"usage": {"input_tokens": 1000, "output_tokens": 500}})
 
         with pytest.raises(KeyError, match="Missing 'model' field"):
             TokenTracker.parse_claude_output(json_output)
 
     def test_unknown_model_tier(self):
         """Test handling of unknown model tier."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 1000,
-                "output_tokens": 500
-            },
-            "model": "claude-unknown-model"
-        })
+        json_output = json.dumps(
+            {"usage": {"input_tokens": 1000, "output_tokens": 500}, "model": "claude-unknown-model"}
+        )
 
         with pytest.raises(ValueError, match="Unknown model tier"):
             TokenTracker.parse_claude_output(json_output)
@@ -250,7 +227,7 @@ class TestCalculateCost:
         # Should maintain precision to 6 decimal places
         assert isinstance(cost, Decimal)
         # Verify it's rounded to 6 decimal places
-        assert len(str(cost).split('.')[-1]) <= 6
+        assert len(str(cost).split(".")[-1]) <= 6
 
     def test_case_insensitive_model_name(self):
         """Test that model names are case-insensitive."""
@@ -276,13 +253,12 @@ class TestIntegrationWithBudgetManager:
 
     def test_parsed_output_compatible_with_budget_manager(self):
         """Test that parsed output format is compatible with BudgetManager.track_usage."""
-        json_output = json.dumps({
-            "usage": {
-                "input_tokens": 1000,
-                "output_tokens": 500
-            },
-            "model": "claude-3-haiku-20240307"
-        })
+        json_output = json.dumps(
+            {
+                "usage": {"input_tokens": 1000, "output_tokens": 500},
+                "model": "claude-3-haiku-20240307",
+            }
+        )
 
         result = TokenTracker.parse_claude_output(json_output)
 
@@ -303,26 +279,12 @@ class TestIntegrationWithBudgetManager:
                 "model": "haiku",
                 "input": 1000,
                 "output": 1000,
-                "expected": 0.00025 + 0.00125  # 0.0015
+                "expected": 0.00025 + 0.00125,  # 0.0015
             },
-            {
-                "model": "sonnet",
-                "input": 1000,
-                "output": 1000,
-                "expected": 0.003 + 0.015  # 0.018
-            },
-            {
-                "model": "opus",
-                "input": 1000,
-                "output": 1000,
-                "expected": 0.015 + 0.075  # 0.090
-            }
+            {"model": "sonnet", "input": 1000, "output": 1000, "expected": 0.003 + 0.015},  # 0.018
+            {"model": "opus", "input": 1000, "output": 1000, "expected": 0.015 + 0.075},  # 0.090
         ]
 
         for case in test_cases:
-            cost = TokenTracker.calculate_cost(
-                case["input"],
-                case["output"],
-                case["model"]
-            )
+            cost = TokenTracker.calculate_cost(case["input"], case["output"], case["model"])
             assert abs(float(cost) - case["expected"]) < 0.000001

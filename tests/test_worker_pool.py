@@ -11,9 +11,11 @@ Tests cover:
 """
 
 import time
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from src.worker_pool import WorkerPool, TaskStatus, TaskResult
+
+from src.worker_pool import TaskStatus, WorkerPool
 
 
 @pytest.fixture
@@ -38,11 +40,7 @@ def test_worker_pool_initialization():
 
 def test_submit_task(worker_pool):
     """Test basic task submission."""
-    task_id = worker_pool.submit(
-        prompt="Test prompt",
-        model="haiku",
-        project_id="test-project"
-    )
+    task_id = worker_pool.submit(prompt="Test prompt", model="haiku", project_id="test-project")
 
     assert task_id is not None
     assert task_id in worker_pool.tasks
@@ -51,7 +49,8 @@ def test_submit_task(worker_pool):
     assert task.prompt == "Test prompt"
     assert task.model == "haiku"
     assert task.project_id == "test-project"
-    assert task.status == TaskStatus.PENDING
+    # Task starts immediately when workers are available (direct start optimization)
+    assert task.status in (TaskStatus.PENDING, TaskStatus.RUNNING)
 
 
 def test_submit_multiple_tasks(worker_pool):
@@ -60,9 +59,7 @@ def test_submit_multiple_tasks(worker_pool):
 
     for i in range(5):
         task_id = worker_pool.submit(
-            prompt=f"Test prompt {i}",
-            model="haiku",
-            project_id="test-project"
+            prompt=f"Test prompt {i}", model="haiku", project_id="test-project"
         )
         task_ids.append(task_id)
 
@@ -71,7 +68,7 @@ def test_submit_multiple_tasks(worker_pool):
     assert all(tid in worker_pool.tasks for tid in task_ids)
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_task_execution_success(mock_popen, worker_pool):
     """Test successful task execution."""
     # Mock the subprocess
@@ -79,24 +76,15 @@ def test_task_execution_success(mock_popen, worker_pool):
     mock_process.poll.return_value = 0  # Process completed
     mock_process.returncode = 0
     mock_process.pid = 12345
-    mock_process.communicate.return_value = (
-        json.dumps({
-            "content": [{"text": "Test response"}],
-            "usage": {
-                "input_tokens": 100,
-                "output_tokens": 50
-            }
-        }),
-        ""
+    json_output = json.dumps(
+        {"result": "Test response", "usage": {"input_tokens": 100, "output_tokens": 50}}
     )
+    mock_process.stdout.read.return_value = json_output
+    mock_process.communicate.return_value = (json_output, "")
     mock_popen.return_value = mock_process
 
     worker_pool.start()
-    task_id = worker_pool.submit(
-        prompt="Test prompt",
-        model="haiku",
-        project_id="test-project"
-    )
+    task_id = worker_pool.submit(prompt="Test prompt", model="haiku", project_id="test-project")
 
     # Wait for processing
     time.sleep(1.0)
@@ -116,7 +104,7 @@ def test_get_result_nonexistent_task(worker_pool):
         worker_pool.get_result("nonexistent-task-id")
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_timeout_handling(mock_popen, worker_pool):
     """Test that tasks timeout correctly."""
     # Mock a process that never completes
@@ -127,10 +115,7 @@ def test_timeout_handling(mock_popen, worker_pool):
 
     worker_pool.start()
     task_id = worker_pool.submit(
-        prompt="Test prompt",
-        model="haiku",
-        project_id="test-project",
-        timeout=0.5  # 500ms timeout
+        prompt="Test prompt", model="haiku", project_id="test-project", timeout=0.5  # 500ms timeout
     )
 
     # Wait for timeout
@@ -141,7 +126,7 @@ def test_timeout_handling(mock_popen, worker_pool):
     mock_process.kill.assert_called()
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_kill_task(mock_popen, worker_pool):
     """Test killing a running task."""
     mock_process = MagicMock()
@@ -150,11 +135,7 @@ def test_kill_task(mock_popen, worker_pool):
     mock_popen.return_value = mock_process
 
     worker_pool.start()
-    task_id = worker_pool.submit(
-        prompt="Test prompt",
-        model="haiku",
-        project_id="test-project"
-    )
+    task_id = worker_pool.submit(prompt="Test prompt", model="haiku", project_id="test-project")
 
     # Give it time to start
     time.sleep(0.5)
@@ -175,7 +156,7 @@ def test_kill_nonexistent_task(worker_pool):
     assert killed is False
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_concurrent_workers(mock_popen, worker_pool):
     """Test that multiple workers can run concurrently."""
     # Create multiple mock processes
@@ -194,9 +175,7 @@ def test_concurrent_workers(mock_popen, worker_pool):
     task_ids = []
     for i in range(3):
         task_id = worker_pool.submit(
-            prompt=f"Test prompt {i}",
-            model="haiku",
-            project_id="test-project"
+            prompt=f"Test prompt {i}", model="haiku", project_id="test-project"
         )
         task_ids.append(task_id)
 
@@ -207,9 +186,10 @@ def test_concurrent_workers(mock_popen, worker_pool):
     assert worker_pool.active_workers == 3
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_queue_system(mock_popen, worker_pool):
     """Test that tasks queue when workers are busy."""
+
     # Mock processes that never complete
     def create_mock_process():
         mock_process = MagicMock()
@@ -225,9 +205,7 @@ def test_queue_system(mock_popen, worker_pool):
     task_ids = []
     for i in range(5):
         task_id = worker_pool.submit(
-            prompt=f"Test prompt {i}",
-            model="haiku",
-            project_id="test-project"
+            prompt=f"Test prompt {i}", model="haiku", project_id="test-project"
         )
         task_ids.append(task_id)
 
@@ -239,13 +217,12 @@ def test_queue_system(mock_popen, worker_pool):
 
     # Other tasks should be queued
     pending_count = sum(
-        1 for task in worker_pool.tasks.values()
-        if task.status == TaskStatus.PENDING
+        1 for task in worker_pool.tasks.values() if task.status == TaskStatus.PENDING
     )
     assert pending_count == 2
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_get_active_pids(mock_popen, worker_pool):
     """Test PID tracking."""
     mock_processes = []
@@ -265,9 +242,7 @@ def test_get_active_pids(mock_popen, worker_pool):
     task_ids = []
     for i in range(3):
         task_id = worker_pool.submit(
-            prompt=f"Test prompt {i}",
-            model="haiku",
-            project_id="test-project"
+            prompt=f"Test prompt {i}", model="haiku", project_id="test-project"
         )
         task_ids.append(task_id)
         expected_pids[task_id] = 20000 + i
@@ -282,28 +257,20 @@ def test_get_active_pids(mock_popen, worker_pool):
         assert pid == expected_pids[task_id]
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_worker_cleanup(mock_popen, worker_pool):
     """Test that workers are cleaned up after completion."""
     mock_process = MagicMock()
     mock_process.poll.return_value = 0  # Completed
     mock_process.returncode = 0
     mock_process.pid = 12345
-    mock_process.communicate.return_value = (
-        json.dumps({
-            "content": [{"text": "Response"}],
-            "usage": {"input_tokens": 10, "output_tokens": 5}
-        }),
-        ""
-    )
+    json_output = json.dumps({"result": "Response", "usage": {"input_tokens": 10, "output_tokens": 5}})
+    mock_process.stdout.read.return_value = json_output
+    mock_process.communicate.return_value = (json_output, "")
     mock_popen.return_value = mock_process
 
     worker_pool.start()
-    task_id = worker_pool.submit(
-        prompt="Test prompt",
-        model="haiku",
-        project_id="test-project"
-    )
+    task_id = worker_pool.submit(prompt="Test prompt", model="haiku", project_id="test-project")
 
     # Wait for completion
     time.sleep(1.0)
@@ -335,22 +302,19 @@ def test_cost_calculation():
     pool.stop()
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_process_failure_handling(mock_popen, worker_pool):
     """Test handling of process failures."""
     mock_process = MagicMock()
     mock_process.poll.return_value = 1  # Failed
     mock_process.returncode = 1
     mock_process.pid = 12345
+    mock_process.stdout.read.return_value = ""
     mock_process.communicate.return_value = ("", "Error message")
     mock_popen.return_value = mock_process
 
     worker_pool.start()
-    task_id = worker_pool.submit(
-        prompt="Test prompt",
-        model="haiku",
-        project_id="test-project"
-    )
+    task_id = worker_pool.submit(prompt="Test prompt", model="haiku", project_id="test-project")
 
     # Wait for processing
     time.sleep(1.0)
@@ -361,22 +325,19 @@ def test_process_failure_handling(mock_popen, worker_pool):
     assert "exited with code 1" in result.error
 
 
-@patch('subprocess.Popen')
+@patch("src.worker_pool.subprocess.Popen")
 def test_invalid_json_output(mock_popen, worker_pool):
     """Test handling of invalid JSON output from Claude."""
     mock_process = MagicMock()
     mock_process.poll.return_value = 0
     mock_process.returncode = 0
     mock_process.pid = 12345
+    mock_process.stdout.read.return_value = "Invalid JSON {{{"
     mock_process.communicate.return_value = ("Invalid JSON {{{", "")
     mock_popen.return_value = mock_process
 
     worker_pool.start()
-    task_id = worker_pool.submit(
-        prompt="Test prompt",
-        model="haiku",
-        project_id="test-project"
-    )
+    task_id = worker_pool.submit(prompt="Test prompt", model="haiku", project_id="test-project")
 
     # Wait for processing
     time.sleep(1.0)
@@ -393,7 +354,7 @@ def test_custom_timeout(worker_pool):
         prompt="Test prompt",
         model="haiku",
         project_id="test-project",
-        timeout=60.0  # 60 second timeout
+        timeout=60.0,  # 60 second timeout
     )
 
     task = worker_pool.tasks[task_id]
@@ -401,7 +362,6 @@ def test_custom_timeout(worker_pool):
 
 
 import json  # Add this import for the tests
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

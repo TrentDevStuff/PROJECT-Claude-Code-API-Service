@@ -2,6 +2,8 @@
 
 Execute complex multi-step tasks with Claude's agentic capabilities. Tasks can use tools, spawn agents, and invoke skills.
 
+This endpoint always uses the **CLI path** (Claude CLI subprocess). The SDK path does not support tool use, agent spawning, or skill invocation. See [Execution Paths](../guides/execution-paths.md) for details.
+
 ## Endpoint
 
 ```

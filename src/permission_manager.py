@@ -8,22 +8,24 @@ Manages per-API-key permission profiles including:
 - Network and filesystem access controls
 """
 
-import sqlite3
+from __future__ import annotations
+
 import json
-from typing import List, Dict, Any, Optional
+import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
 class PermissionProfile:
     """Permission profile for an API key"""
+
     api_key: str
-    allowed_tools: List[str]
-    blocked_tools: List[str]
-    allowed_agents: List[str]
-    allowed_skills: List[str]
+    allowed_tools: list[str]
+    blocked_tools: list[str]
+    allowed_agents: list[str]
+    allowed_skills: list[str]
     max_concurrent_tasks: int
     max_cpu_cores: float
     max_memory_gb: float
@@ -37,9 +39,10 @@ class PermissionProfile:
 @dataclass
 class PermissionValidation:
     """Result of permission validation"""
+
     allowed: bool
     reason: str
-    profile: Optional[PermissionProfile] = None
+    profile: PermissionProfile | None = None
 
 
 # Default permission profiles
@@ -56,7 +59,7 @@ DEFAULT_PROFILES = {
         "max_cost_per_task": 0.10,
         "network_access": False,
         "filesystem_access": "readonly",
-        "workspace_size_mb": 50
+        "workspace_size_mb": 50,
     },
     "pro": {
         "allowed_tools": ["Read", "Grep", "Glob", "Bash"],
@@ -70,7 +73,7 @@ DEFAULT_PROFILES = {
         "max_cost_per_task": 1.00,
         "network_access": False,
         "filesystem_access": "readonly",
-        "workspace_size_mb": 100
+        "workspace_size_mb": 100,
     },
     "enterprise": {
         "allowed_tools": ["*"],  # All tools
@@ -84,8 +87,8 @@ DEFAULT_PROFILES = {
         "max_cost_per_task": 10.00,
         "network_access": True,
         "filesystem_access": "readwrite",
-        "workspace_size_mb": 500
-    }
+        "workspace_size_mb": 500,
+    },
 }
 
 
@@ -110,7 +113,8 @@ class PermissionManager:
         cursor = conn.cursor()
 
         # Create api_key_permissions table
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS api_key_permissions (
                 api_key TEXT PRIMARY KEY,
                 allowed_tools TEXT NOT NULL,
@@ -127,12 +131,13 @@ class PermissionManager:
                 workspace_size_mb INTEGER DEFAULT 100,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
         conn.commit()
         conn.close()
 
-    def get_profile(self, api_key: str) -> Optional[PermissionProfile]:
+    def get_profile(self, api_key: str) -> PermissionProfile | None:
         """
         Load permission profile from database.
 
@@ -145,14 +150,17 @@ class PermissionManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT allowed_tools, blocked_tools, allowed_agents, allowed_skills,
                    max_concurrent_tasks, max_cpu_cores, max_memory_gb,
                    max_execution_seconds, max_cost_per_task, network_access,
                    filesystem_access, workspace_size_mb
             FROM api_key_permissions
             WHERE api_key = ?
-        """, (api_key,))
+        """,
+            (api_key,),
+        )
 
         row = cursor.fetchone()
         conn.close()
@@ -173,10 +181,10 @@ class PermissionManager:
             max_cost_per_task=row[8],
             network_access=bool(row[9]),
             filesystem_access=row[10],
-            workspace_size_mb=row[11]
+            workspace_size_mb=row[11],
         )
 
-    def set_profile(self, api_key: str, profile: Dict[str, Any]):
+    def set_profile(self, api_key: str, profile: dict[str, Any]):
         """
         Create or update permission profile.
 
@@ -187,28 +195,31 @@ class PermissionManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR REPLACE INTO api_key_permissions (
                 api_key, allowed_tools, blocked_tools, allowed_agents, allowed_skills,
                 max_concurrent_tasks, max_cpu_cores, max_memory_gb,
                 max_execution_seconds, max_cost_per_task, network_access,
                 filesystem_access, workspace_size_mb
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            api_key,
-            json.dumps(profile.get("allowed_tools", [])),
-            json.dumps(profile.get("blocked_tools", [])),
-            json.dumps(profile.get("allowed_agents", [])),
-            json.dumps(profile.get("allowed_skills", [])),
-            profile.get("max_concurrent_tasks", 3),
-            profile.get("max_cpu_cores", 1.0),
-            profile.get("max_memory_gb", 1.0),
-            profile.get("max_execution_seconds", 300),
-            profile.get("max_cost_per_task", 1.00),
-            profile.get("network_access", False),
-            profile.get("filesystem_access", "readonly"),
-            profile.get("workspace_size_mb", 100)
-        ))
+        """,
+            (
+                api_key,
+                json.dumps(profile.get("allowed_tools", [])),
+                json.dumps(profile.get("blocked_tools", [])),
+                json.dumps(profile.get("allowed_agents", [])),
+                json.dumps(profile.get("allowed_skills", [])),
+                profile.get("max_concurrent_tasks", 3),
+                profile.get("max_cpu_cores", 1.0),
+                profile.get("max_memory_gb", 1.0),
+                profile.get("max_execution_seconds", 300),
+                profile.get("max_cost_per_task", 1.00),
+                profile.get("network_access", False),
+                profile.get("filesystem_access", "readonly"),
+                profile.get("workspace_size_mb", 100),
+            ),
+        )
 
         conn.commit()
         conn.close()
@@ -229,11 +240,11 @@ class PermissionManager:
     def validate_task_request(
         self,
         api_key: str,
-        requested_tools: Optional[List[str]] = None,
-        requested_agents: Optional[List[str]] = None,
-        requested_skills: Optional[List[str]] = None,
-        timeout: Optional[int] = None,
-        max_cost: Optional[float] = None
+        requested_tools: list[str] | None = None,
+        requested_agents: list[str] | None = None,
+        requested_skills: list[str] | None = None,
+        timeout: int | None = None,
+        max_cost: float | None = None,
     ) -> PermissionValidation:
         """
         Validate a task request against API key permissions.
@@ -253,8 +264,7 @@ class PermissionManager:
 
         if not profile:
             return PermissionValidation(
-                allowed=False,
-                reason=f"No permission profile found for API key"
+                allowed=False, reason="No permission profile found for API key"
             )
 
         # Validate tools
@@ -265,7 +275,7 @@ class PermissionManager:
                     return PermissionValidation(
                         allowed=False,
                         reason=f"Tool '{tool}' is explicitly blocked",
-                        profile=profile
+                        profile=profile,
                     )
 
                 # Check if tool is allowed (unless wildcard)
@@ -273,7 +283,7 @@ class PermissionManager:
                     return PermissionValidation(
                         allowed=False,
                         reason=f"Tool '{tool}' is not in allowed list",
-                        profile=profile
+                        profile=profile,
                     )
 
         # Validate agents
@@ -283,7 +293,7 @@ class PermissionManager:
                     return PermissionValidation(
                         allowed=False,
                         reason=f"Agent '{agent}' is not in allowed list",
-                        profile=profile
+                        profile=profile,
                     )
 
         # Validate skills
@@ -293,7 +303,7 @@ class PermissionManager:
                     return PermissionValidation(
                         allowed=False,
                         reason=f"Skill '{skill}' is not in allowed list",
-                        profile=profile
+                        profile=profile,
                     )
 
         # Validate timeout
@@ -301,7 +311,7 @@ class PermissionManager:
             return PermissionValidation(
                 allowed=False,
                 reason=f"Requested timeout ({timeout}s) exceeds limit ({profile.max_execution_seconds}s)",
-                profile=profile
+                profile=profile,
             )
 
         # Validate cost
@@ -309,14 +319,12 @@ class PermissionManager:
             return PermissionValidation(
                 allowed=False,
                 reason=f"Requested max cost (${max_cost}) exceeds limit (${profile.max_cost_per_task})",
-                profile=profile
+                profile=profile,
             )
 
         # All validations passed
         return PermissionValidation(
-            allowed=True,
-            reason="All permission checks passed",
-            profile=profile
+            allowed=True, reason="All permission checks passed", profile=profile
         )
 
     def delete_profile(self, api_key: str):

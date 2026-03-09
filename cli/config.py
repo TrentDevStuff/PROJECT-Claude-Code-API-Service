@@ -1,22 +1,26 @@
 """Configuration management for CLI"""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
-from typing import Optional
+
 import yaml
 from pydantic import BaseModel, Field
 
 
 class ServiceConfig(BaseModel):
     """Service configuration"""
+
     directory: Path
-    port: int = 8006
+    port: int = 8007
     host: str = "0.0.0.0"
     auto_start: bool = False
 
 
 class CLIConfig(BaseModel):
     """CLI configuration"""
+
     default_output: str = "table"  # table, json, text
     color: str = "auto"  # auto, always, never
     verbose: bool = False
@@ -24,6 +28,7 @@ class CLIConfig(BaseModel):
 
 class Config(BaseModel):
     """Complete CLI configuration"""
+
     service: ServiceConfig
     cli: CLIConfig = Field(default_factory=CLIConfig)
 
@@ -33,7 +38,7 @@ class ConfigManager:
 
     def __init__(self):
         self.config_file = Path.home() / ".claude-api" / "config.yaml"
-        self._config: Optional[Config] = None
+        self._config: Config | None = None
 
     def detect_service_directory(self) -> Path:
         """Auto-detect service directory"""
@@ -80,9 +85,7 @@ class ConfigManager:
         service_dir = self.detect_service_directory()
 
         # Create default config
-        self._config = Config(
-            service=ServiceConfig(directory=service_dir)
-        )
+        self._config = Config(service=ServiceConfig(directory=service_dir))
 
         return self._config
 
@@ -90,7 +93,7 @@ class ConfigManager:
         """Save configuration to file"""
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             yaml.dump(config.model_dump(), f, default_flow_style=False)
 
         self._config = config

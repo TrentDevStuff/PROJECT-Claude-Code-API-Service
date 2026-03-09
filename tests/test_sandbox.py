@@ -4,12 +4,14 @@ CRITICAL SECURITY TESTS - ALL MUST PASS
 """
 
 import pytest
-import docker
-import time
-import os
-from pathlib import Path
 
-from src.sandbox_manager import SandboxManager, SandboxConfig, SecurityError
+docker = pytest.importorskip("docker.errors", reason="docker SDK not installed or shadowed")
+import os
+import time
+
+import docker  # re-import full package after guard
+
+from src.sandbox_manager import SandboxConfig, SandboxManager, SecurityError
 
 
 class TestSandboxManager:
@@ -45,10 +47,7 @@ class TestSandboxManager:
 
     def test_create_and_destroy_sandbox(self, sandbox_manager, test_project):
         """Test basic sandbox creation and destruction"""
-        sandbox = sandbox_manager.create_sandbox(
-            task_id="test-001",
-            project_path=test_project
-        )
+        sandbox = sandbox_manager.create_sandbox(task_id="test-001", project_path=test_project)
 
         assert sandbox.task_id == "test-001"
         assert sandbox.container_id
@@ -65,8 +64,7 @@ class TestSandboxManager:
         try:
             # Try to access network - should fail
             exit_code, stdout, stderr = sandbox_manager.execute_command(
-                sandbox,
-                "curl http://google.com"
+                sandbox, "curl http://google.com"
             )
 
             # Command should be blocked by security validator
@@ -85,10 +83,7 @@ class TestSandboxManager:
 
         try:
             # Try to read /etc/passwd - should fail
-            exit_code, stdout, stderr = sandbox_manager.execute_command(
-                sandbox,
-                "cat /etc/passwd"
-            )
+            exit_code, stdout, stderr = sandbox_manager.execute_command(sandbox, "cat /etc/passwd")
 
             # Command executes but file doesn't exist in minimal container
             # OR we get permission denied
@@ -101,10 +96,7 @@ class TestSandboxManager:
     def test_resource_limits_cpu(self, sandbox_manager):
         """Test that CPU limits are enforced"""
         config = SandboxConfig(cpu_quota=50000)  # 0.5 CPU cores
-        sandbox = sandbox_manager.create_sandbox(
-            task_id="test-cpu",
-            config=config
-        )
+        sandbox = sandbox_manager.create_sandbox(task_id="test-cpu", config=config)
 
         try:
             # Verify container has CPU limit
@@ -118,10 +110,7 @@ class TestSandboxManager:
     def test_resource_limits_memory(self, sandbox_manager):
         """Test that memory limits are enforced"""
         config = SandboxConfig(memory_limit="512m")
-        sandbox = sandbox_manager.create_sandbox(
-            task_id="test-memory",
-            config=config
-        )
+        sandbox = sandbox_manager.create_sandbox(task_id="test-memory", config=config)
 
         try:
             # Verify container has memory limit
@@ -194,15 +183,11 @@ class TestSandboxManager:
 
         try:
             # Write file in sandbox1
-            sandbox_manager.execute_command(
-                sandbox1,
-                "echo 'secret data' > /workspace/secret.txt"
-            )
+            sandbox_manager.execute_command(sandbox1, "echo 'secret data' > /workspace/secret.txt")
 
             # Try to read from sandbox2
             exit_code, stdout, stderr = sandbox_manager.execute_command(
-                sandbox2,
-                "cat /workspace/secret.txt"
+                sandbox2, "cat /workspace/secret.txt"
             )
 
             # File should not exist in sandbox2
@@ -215,18 +200,13 @@ class TestSandboxManager:
     def test_timeout_enforcement(self, sandbox_manager):
         """Test that command timeout is enforced"""
         config = SandboxConfig(timeout_seconds=2)
-        sandbox = sandbox_manager.create_sandbox(
-            task_id="test-timeout",
-            config=config
-        )
+        sandbox = sandbox_manager.create_sandbox(task_id="test-timeout", config=config)
 
         try:
             # Execute a long-running command
             start = time.time()
             exit_code, stdout, stderr = sandbox_manager.execute_command(
-                sandbox,
-                "sleep 10",
-                timeout=2
+                sandbox, "sleep 10", timeout=2
             )
             elapsed = time.time() - start
 
@@ -242,17 +222,11 @@ class TestSandboxManager:
 
         try:
             # Validate that workspace writes are allowed
-            is_valid = sandbox_manager.validate_file_access(
-                "/workspace/output.txt",
-                "write"
-            )
+            is_valid = sandbox_manager.validate_file_access("/workspace/output.txt", "write")
             assert is_valid
 
             # Validate that non-workspace writes are blocked
-            is_valid = sandbox_manager.validate_file_access(
-                "/project/output.txt",
-                "write"
-            )
+            is_valid = sandbox_manager.validate_file_access("/project/output.txt", "write")
             assert not is_valid
 
         finally:
@@ -266,7 +240,7 @@ class TestSandboxManager:
             # Create some files
             sandbox_manager.execute_command(
                 sandbox,
-                "echo 'test' > /workspace/file1.txt && mkdir /workspace/subdir && echo 'test2' > /workspace/subdir/file2.txt"
+                "echo 'test' > /workspace/file1.txt && mkdir /workspace/subdir && echo 'test2' > /workspace/subdir/file2.txt",
             )
 
             # Get workspace files
@@ -285,10 +259,7 @@ class TestSandboxManager:
 
         try:
             # Create a file with known size
-            sandbox_manager.execute_command(
-                sandbox,
-                "echo 'hello world' > /workspace/test.txt"
-            )
+            sandbox_manager.execute_command(sandbox, "echo 'hello world' > /workspace/test.txt")
 
             size = sandbox_manager.get_workspace_size(sandbox)
             assert size > 0

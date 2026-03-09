@@ -1,9 +1,11 @@
 """API key management commands"""
 
-import typer
+from __future__ import annotations
+
 import sys
 from pathlib import Path
-from typing import Optional
+
+import typer
 from rich.console import Console
 from rich.table import Table
 
@@ -12,14 +14,14 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 
 from src.auth import AuthManager
 from src.permission_manager import PermissionManager
+
 from ..config import config_manager
 from ..utils import (
-    print_success,
     print_error,
-    print_warning,
     print_info,
     print_section,
-    create_data_table,
+    print_success,
+    print_warning,
 )
 
 app = typer.Typer(help="API key management")
@@ -43,8 +45,10 @@ def create(
     project_id: str = typer.Option(..., "--project-id", "-p", help="Project identifier"),
     profile: str = typer.Option("enterprise", help="Permission profile (free, pro, enterprise)"),
     rate_limit: int = typer.Option(100, help="Requests per minute"),
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Friendly name for key"),
-    output_format: str = typer.Option("text", "--output", "-o", help="Output format (text, json, env)"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Friendly name for key"),
+    output_format: str = typer.Option(
+        "text", "--output", "-o", help="Output format (text, json, env)"
+    ),
 ):
     """Create new API key"""
 
@@ -63,6 +67,7 @@ def create(
 
         if output_format == "json":
             import json
+
             data = {
                 "key": api_key,
                 "project_id": project_id,
@@ -100,17 +105,18 @@ def create(
 
 @app.command()
 def list(
-    project_id: Optional[str] = typer.Option(None, "--project-id", "-p", help="Filter by project"),
+    project_id: str | None = typer.Option(None, "--project-id", "-p", help="Filter by project"),
     active_only: bool = typer.Option(False, help="Show only active keys"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List all API keys"""
 
     try:
-        auth_manager = get_auth_manager()
+        get_auth_manager()  # validate auth is accessible
 
         # Query database directly (AuthManager doesn't have list_keys)
         import sqlite3
+
         config = config_manager.load()
         db_path = config.service.directory / "data" / "auth.db"
 
@@ -140,7 +146,7 @@ def list(
                 "project_id": row[1],
                 "rate_limit": row[2],
                 "created_at": row[3],
-                "revoked": bool(row[4])
+                "revoked": bool(row[4]),
             }
             for row in rows
         ]
@@ -151,6 +157,7 @@ def list(
 
         if json_output:
             import json
+
             print(json.dumps(keys, indent=2, default=str))
         else:
             # Create table
@@ -166,9 +173,9 @@ def list(
 
                 table.add_row(
                     key_display,
-                    key_data.get('project_id', 'N/A'),
+                    key_data.get("project_id", "N/A"),
                     f"{key_data.get('rate_limit', 'N/A')}/min",
-                    str(key_data.get('created_at', 'N/A'))[:19]
+                    str(key_data.get("created_at", "N/A"))[:19],
                 )
 
             console.print(table)
@@ -193,6 +200,7 @@ def revoke(
         # Confirm unless force
         if not force:
             from ..utils import confirm
+
             if not confirm(f"Revoke API key {key[:15]}...?", default=False):
                 print_info("Cancelled")
                 return
@@ -214,8 +222,8 @@ def revoke(
 @app.command()
 def permissions(
     key: str = typer.Argument(..., help="API key to inspect"),
-    set_profile: Optional[str] = typer.Option(None, help="Change profile (free, pro, enterprise)"),
-    max_cost: Optional[float] = typer.Option(None, help="Set max cost per task"),
+    set_profile: str | None = typer.Option(None, help="Change profile (free, pro, enterprise)"),
+    max_cost: float | None = typer.Option(None, help="Set max cost per task"),
 ):
     """View/set permissions for a key"""
 
@@ -232,7 +240,7 @@ def permissions(
             # Update max cost
             profile = perm_manager.get_profile(key)
             if profile:
-                profile['max_cost_per_task'] = max_cost
+                profile["max_cost_per_task"] = max_cost
                 perm_manager.set_profile(key, profile)
                 print_success(f"Max cost updated to: ${max_cost:.2f}")
                 print()
@@ -251,8 +259,8 @@ def permissions(
         print()
 
         # Tools
-        allowed_tools = profile.get('allowed_tools', [])
-        blocked_tools = profile.get('blocked_tools', [])
+        allowed_tools = profile.get("allowed_tools", [])
+        blocked_tools = profile.get("blocked_tools", [])
 
         if allowed_tools == ["*"]:
             console.print("Allowed Tools: [green](all)[/green]")
@@ -265,7 +273,7 @@ def permissions(
         print()
 
         # Agents
-        allowed_agents = profile.get('allowed_agents', [])
+        allowed_agents = profile.get("allowed_agents", [])
         if allowed_agents == ["*"]:
             console.print("Allowed Agents: [green](all)[/green]")
         elif allowed_agents:
@@ -274,7 +282,7 @@ def permissions(
         print()
 
         # Skills
-        allowed_skills = profile.get('allowed_skills', [])
+        allowed_skills = profile.get("allowed_skills", [])
         if allowed_skills == ["*"]:
             console.print("Allowed Skills: [green](all)[/green]")
         elif allowed_skills:

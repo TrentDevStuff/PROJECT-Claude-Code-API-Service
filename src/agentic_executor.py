@@ -5,50 +5,57 @@ Enables full Claude Code capabilities: tools, agents, skills, multi-turn reasoni
 Includes comprehensive audit logging integration.
 """
 
+from __future__ import annotations
+
 import asyncio
-import json
-import os
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .worker_pool import WorkerPool, TaskResult
+from .agent_discovery import AgentSkillDiscovery
+from .audit_logger import AuditLogger
 from .budget_manager import BudgetManager
 from .model_router import auto_select_model
-from .audit_logger import AuditLogger
-from .agent_discovery import AgentSkillDiscovery
-
+from .worker_pool import TaskResult, WorkerPool
 
 # Pydantic Models
 
+
 class AgenticTaskRequest(BaseModel):
     """Request model for agentic task execution."""
+
     description: str = Field(..., description="Natural language task description")
-    allow_tools: List[str] = Field(default_factory=list, description="Allowed tools (Read, Grep, Bash, etc.)")
-    allow_agents: List[str] = Field(default_factory=list, description="Allowed agents to spawn")
-    allow_skills: List[str] = Field(default_factory=list, description="Allowed skills to invoke")
+    allow_tools: list[str] = Field(
+        default_factory=list, description="Allowed tools (Read, Grep, Bash, etc.)"
+    )
+    allow_agents: list[str] = Field(default_factory=list, description="Allowed agents to spawn")
+    allow_skills: list[str] = Field(default_factory=list, description="Allowed skills to invoke")
     working_directory: str = Field(default="/project", description="Working directory for task")
     timeout: int = Field(default=300, description="Timeout in seconds (max 600)")
     max_cost: float = Field(default=1.00, description="Maximum cost in USD")
-    model: Optional[str] = Field(default=None, description="Model to use (haiku/sonnet/opus), auto-selected if None")
+    model: str | None = Field(
+        default=None, description="Model to use (haiku/sonnet/opus), auto-selected if None"
+    )
     project_id: str = Field(default="default", description="Project ID for budget tracking")
     api_key: str = Field(default="default", description="API key for audit logging")
 
 
 class ExecutionLogEntry(BaseModel):
     """Single entry in execution log."""
+
     step: int
     timestamp: str
     action: str  # "tool_call", "agent_spawn", "skill_invoke", "thinking", "result"
-    details: Dict[str, Any]
+    details: dict[str, Any]
 
 
 class Artifact(BaseModel):
     """Generated artifact from task execution."""
+
     type: str  # "file", "report", "data"
     path: str
     size_bytes: int
@@ -57,15 +64,17 @@ class Artifact(BaseModel):
 
 class AgenticTaskResponse(BaseModel):
     """Response model for agentic task execution."""
+
     task_id: str
     status: str  # "completed", "failed", "timeout", "cost_exceeded"
-    result: Dict[str, Any]
-    execution_log: List[ExecutionLogEntry]
-    artifacts: List[Artifact]
-    usage: Dict[str, Any]
+    result: dict[str, Any]
+    execution_log: list[ExecutionLogEntry]
+    artifacts: list[Artifact]
+    usage: dict[str, Any]
 
 
 # Main Executor
+
 
 class AgenticExecutor:
     """
@@ -83,10 +92,10 @@ class AgenticExecutor:
 
     def __init__(
         self,
-        worker_pool: Optional[WorkerPool] = None,
-        budget_manager: Optional[BudgetManager] = None,
-        audit_logger: Optional[AuditLogger] = None,
-        agent_discovery: Optional[AgentSkillDiscovery] = None
+        worker_pool: WorkerPool | None = None,
+        budget_manager: BudgetManager | None = None,
+        audit_logger: AuditLogger | None = None,
+        agent_discovery: AgentSkillDiscovery | None = None,
     ):
         """
         Initialize AgenticExecutor.
@@ -133,8 +142,8 @@ class AgenticExecutor:
                 "description": request.description[:100],
                 "allow_tools": request.allow_tools,
                 "allow_agents": request.allow_agents,
-                "allow_skills": request.allow_skills
-            }
+                "allow_skills": request.allow_skills,
+            },
         )
 
         try:
@@ -144,8 +153,7 @@ class AgenticExecutor:
             # Step 3: Estimate tokens and check budget
             estimated_tokens = self._estimate_tokens(request, model)
             has_budget = await self.budget_manager.check_budget(
-                project_id=request.project_id,
-                estimated_tokens=estimated_tokens
+                project_id=request.project_id, estimated_tokens=estimated_tokens
             )
 
             if not has_budget:
@@ -153,7 +161,7 @@ class AgenticExecutor:
                     task_id,
                     request.api_key,
                     "budget_exceeded",
-                    {"estimated_tokens": estimated_tokens}
+                    {"estimated_tokens": estimated_tokens},
                 )
                 return AgenticTaskResponse(
                     task_id=task_id,
@@ -161,7 +169,7 @@ class AgenticExecutor:
                     result={"error": "Insufficient budget"},
                     execution_log=[],
                     artifacts=[],
-                    usage={"estimated_tokens": estimated_tokens}
+                    usage={"estimated_tokens": estimated_tokens},
                 )
 
             # Step 4: Build agentic prompt with configuration
@@ -175,21 +183,18 @@ class AgenticExecutor:
                 prompt=agentic_prompt,
                 model=model,
                 project_id=request.project_id,
-                timeout=request.timeout
+                timeout=request.timeout,
             )
 
-            # Step 7: Get result (blocking with timeout)
-            task_result: TaskResult = self.worker_pool.get_result(
-                task_id=worker_task_id,
-                timeout=request.timeout + 10  # Add buffer
+            # Step 7: Get result (run in executor to avoid blocking event loop)
+            loop = asyncio.get_event_loop()
+            task_result: TaskResult = await loop.run_in_executor(
+                None, self.worker_pool.get_result, worker_task_id, request.timeout + 10
             )
 
         except TimeoutError:
             await self.audit_logger.log_security_event(
-                task_id,
-                request.api_key,
-                "timeout",
-                {"timeout_seconds": request.timeout}
+                task_id, request.api_key, "timeout", {"timeout_seconds": request.timeout}
             )
             return AgenticTaskResponse(
                 task_id=task_id,
@@ -197,15 +202,12 @@ class AgenticExecutor:
                 result={"error": f"Task exceeded timeout of {request.timeout}s"},
                 execution_log=[],
                 artifacts=[],
-                usage={}
+                usage={},
             )
 
         except Exception as e:
             await self.audit_logger.log_security_event(
-                task_id,
-                request.api_key,
-                "execution_error",
-                {"error": str(e)}
+                task_id, request.api_key, "execution_error", {"error": str(e)}
             )
             return AgenticTaskResponse(
                 task_id=task_id,
@@ -213,7 +215,7 @@ class AgenticExecutor:
                 result={"error": str(e)},
                 execution_log=[],
                 artifacts=[],
-                usage={}
+                usage={},
             )
 
         # Step 8: Extract usage data
@@ -227,14 +229,14 @@ class AgenticExecutor:
                 task_id,
                 request.api_key,
                 "cost_exceeded",
-                {"actual_cost": actual_cost, "max_cost": request.max_cost}
+                {"actual_cost": actual_cost, "max_cost": request.max_cost},
             )
             return AgenticTaskResponse(
                 task_id=task_id,
                 status="cost_exceeded",
                 result={
                     "error": f"Cost ${actual_cost:.4f} exceeded limit ${request.max_cost:.4f}",
-                    "output": task_result.completion[:500]  # Partial output
+                    "output": task_result.completion[:500],  # Partial output
                 },
                 execution_log=[],
                 artifacts=[],
@@ -242,8 +244,8 @@ class AgenticExecutor:
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "total_cost": actual_cost,
-                    "model_used": model
-                }
+                    "model_used": model,
+                },
             )
 
         # Step 9: Track actual usage
@@ -251,7 +253,7 @@ class AgenticExecutor:
             project_id=request.project_id,
             model=model,
             tokens=input_tokens + output_tokens,
-            cost=actual_cost
+            cost=actual_cost,
         )
 
         # Log successful completion
@@ -263,8 +265,8 @@ class AgenticExecutor:
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "cost": actual_cost,
-                "model": model
-            }
+                "model": model,
+            },
         )
 
         # Step 10: Parse execution log from output
@@ -282,7 +284,7 @@ class AgenticExecutor:
             result={
                 "summary": task_result.completion[:1000] if task_result.completion else "",
                 "full_output": task_result.completion or "",
-                "workspace_directory": str(workspace_dir)
+                "workspace_directory": str(workspace_dir),
             },
             execution_log=execution_log,
             artifacts=artifacts,
@@ -292,8 +294,8 @@ class AgenticExecutor:
                 "total_tokens": input_tokens + output_tokens,
                 "total_cost": actual_cost,
                 "model_used": model,
-                "duration_seconds": round(duration_seconds, 2)
-            }
+                "duration_seconds": round(duration_seconds, 2),
+            },
         )
 
     def _validate_request(self, request: AgenticTaskRequest):
@@ -335,7 +337,7 @@ class AgenticExecutor:
         return auto_select_model(
             prompt=request.description,
             context_size=len(request.description),
-            budget_remaining=1000000  # Assume sufficient budget for routing
+            budget_remaining=1000000,  # Assume sufficient budget for routing
         )
 
     def _estimate_tokens(self, request: AgenticTaskRequest, model: str) -> int:
@@ -398,16 +400,18 @@ class AgenticExecutor:
                 # Fallback if discovery fails
                 prompt_parts.append(f"- Allowed Skills: {', '.join(request.allow_skills)}")
 
-        prompt_parts.extend([
-            "",
-            "Instructions:",
-            "1. Complete the task using available tools, agents, and skills",
-            "2. Use Task(subagent_type='agent-name', ...) to invoke agents",
-            "3. Use Skill(command='skill-name') to invoke skills",
-            "4. Be thorough and accurate",
-            "5. Generate any requested artifacts in the working directory",
-            "6. Provide a clear summary when done",
-        ])
+        prompt_parts.extend(
+            [
+                "",
+                "Instructions:",
+                "1. Complete the task using available tools, agents, and skills",
+                "2. Use Task(subagent_type='agent-name', ...) to invoke agents",
+                "3. Use Skill(command='skill-name') to invoke skills",
+                "4. Be thorough and accurate",
+                "5. Generate any requested artifacts in the working directory",
+                "6. Provide a clear summary when done",
+            ]
+        )
 
         return "\n".join(prompt_parts)
 
@@ -417,7 +421,7 @@ class AgenticExecutor:
         workspace_dir.mkdir(parents=True, exist_ok=True)
         return workspace_dir
 
-    def _parse_execution_log(self, output: str) -> List[ExecutionLogEntry]:
+    def _parse_execution_log(self, output: str) -> list[ExecutionLogEntry]:
         """
         Parse execution log from Claude's output.
 
@@ -432,11 +436,11 @@ class AgenticExecutor:
                 step=1,
                 timestamp=datetime.utcnow().isoformat(),
                 action="task_completed",
-                details={"output_length": len(output)}
+                details={"output_length": len(output)},
             )
         ]
 
-    def _collect_artifacts(self, workspace_dir: Path) -> List[Artifact]:
+    def _collect_artifacts(self, workspace_dir: Path) -> list[Artifact]:
         """
         Collect generated artifacts from workspace directory.
 
@@ -454,11 +458,13 @@ class AgenticExecutor:
         for file_path in workspace_dir.rglob("*"):
             if file_path.is_file():
                 stat = file_path.stat()
-                artifacts.append(Artifact(
-                    type="file",
-                    path=str(file_path),
-                    size_bytes=stat.st_size,
-                    created_at=datetime.fromtimestamp(stat.st_mtime).isoformat()
-                ))
+                artifacts.append(
+                    Artifact(
+                        type="file",
+                        path=str(file_path),
+                        size_bytes=stat.st_size,
+                        created_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    )
+                )
 
         return artifacts

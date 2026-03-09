@@ -1,5 +1,5 @@
 ---
-status: planning
+status: completed
 priority: high
 created: 2026-01-30T00:00:00Z
 updated: 2026-01-30T00:00:00Z
@@ -23,9 +23,9 @@ This effort encompasses research, architecture design, and potential implementat
 
 ## Current Status
 
-**Phase**: Architectural Research & Planning
-**Blocking**: INIT-004 (REST API Endpoints) should consider this architecture
-**Timeline**: Decision needed before Wave 2 completion
+**Phase**: Completed — Hybrid approach (Option 3) implemented
+**Decision**: Both simple `/v1/chat/completions` and agentic `/v1/task` endpoints are live
+**Implemented**: 2026-01-30 via EFFORT-Agent-Skill-Integration
 
 ## Key Question
 

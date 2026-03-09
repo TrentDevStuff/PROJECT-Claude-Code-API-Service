@@ -1,16 +1,14 @@
 """Agent and skill discovery commands."""
 
-import json
-from typing import Optional
+from __future__ import annotations
 
 import typer
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
 from ..api_client import APIClient
 from ..config import ConfigManager
-from ..utils import print_error, print_success
+from ..utils import print_error
 
 console = Console()
 
@@ -19,7 +17,7 @@ agents_app = typer.Typer(help="Agent discovery and inspection")
 skills_app = typer.Typer(help="Skill discovery and inspection")
 
 
-def get_capabilities(api_key: Optional[str] = None):
+def get_capabilities(api_key: str | None = None):
     """Get capabilities from API service."""
     try:
         config = ConfigManager()
@@ -33,9 +31,9 @@ def get_capabilities(api_key: Optional[str] = None):
 
 @agents_app.command("list")
 def list_agents(
-    model: Optional[str] = typer.Option(None, help="Filter by model (haiku, sonnet, opus)"),
+    model: str | None = typer.Option(None, help="Filter by model (haiku, sonnet, opus)"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
-    key: Optional[str] = typer.Option(None, "--key", help="API key to use"),
+    key: str | None = typer.Option(None, "--key", help="API key to use"),
 ):
     """List all available agents."""
     caps = get_capabilities(api_key=key)
@@ -44,11 +42,7 @@ def list_agents(
     # Filter by model if specified
     if model:
         model_lower = model.lower()
-        agents = [
-            agent
-            for agent in agents
-            if agent.get("model", "").lower() == model_lower
-        ]
+        agents = [agent for agent in agents if agent.get("model", "").lower() == model_lower]
 
     if json_output:
         console.print_json(data=agents)
@@ -77,7 +71,7 @@ def list_agents(
 @agents_app.command("info")
 def agent_info(
     name: str = typer.Argument(..., help="Agent name to inspect"),
-    key: Optional[str] = typer.Option(None, "--key", help="API key to use"),
+    key: str | None = typer.Option(None, "--key", help="API key to use"),
 ):
     """Show detailed information about an agent."""
     caps = get_capabilities(api_key=key)
@@ -159,7 +153,7 @@ def agent_info(
 @agents_app.command("search")
 def search_agents(
     query: str = typer.Argument(..., help="Search query"),
-    key: Optional[str] = typer.Option(None, "--key", help="API key to use"),
+    key: str | None = typer.Option(None, "--key", help="API key to use"),
 ):
     """Search agents by keyword in name or description."""
     caps = get_capabilities(api_key=key)
@@ -196,7 +190,7 @@ def search_agents(
 @skills_app.command("list")
 def list_skills(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
-    key: Optional[str] = typer.Option(None, "--key", help="API key to use"),
+    key: str | None = typer.Option(None, "--key", help="API key to use"),
 ):
     """List all available skills."""
     caps = get_capabilities(api_key=key)
@@ -227,7 +221,7 @@ def list_skills(
 @skills_app.command("info")
 def skill_info(
     name: str = typer.Argument(..., help="Skill name to inspect"),
-    key: Optional[str] = typer.Option(None, "--key", help="API key to use"),
+    key: str | None = typer.Option(None, "--key", help="API key to use"),
 ):
     """Show detailed information about a skill."""
     caps = get_capabilities(api_key=key)
@@ -286,7 +280,7 @@ def skill_info(
 @skills_app.command("search")
 def search_skills(
     query: str = typer.Argument(..., help="Search query"),
-    key: Optional[str] = typer.Option(None, "--key", help="API key to use"),
+    key: str | None = typer.Option(None, "--key", help="API key to use"),
 ):
     """Search skills by keyword in name or description."""
     caps = get_capabilities(api_key=key)

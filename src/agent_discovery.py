@@ -5,19 +5,25 @@ Scans ~/.claude/agents/ and ~/.claude/skills/ to discover available
 capabilities that can be invoked through the API.
 """
 
+from __future__ import annotations
+
 import json
-import yaml
-from pathlib import Path
-from typing import Dict, List, Optional, Any
+import logging
 from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class AgentInfo:
     """Information about a discovered agent."""
+
     name: str
     description: str
-    tools: List[str]
+    tools: list[str]
     model: str
     file_path: str
 
@@ -25,10 +31,11 @@ class AgentInfo:
 @dataclass
 class SkillInfo:
     """Information about a discovered skill."""
+
     name: str
     description: str
     command: str
-    user_interface: Optional[str]
+    user_interface: str | None
     file_path: str
 
 
@@ -40,7 +47,7 @@ class AgentSkillDiscovery:
     agentic task execution with proper invocation examples.
     """
 
-    def __init__(self, claude_dir: Optional[Path] = None):
+    def __init__(self, claude_dir: Path | None = None):
         """
         Initialize discovery.
 
@@ -51,10 +58,10 @@ class AgentSkillDiscovery:
         self.agents_dir = self.claude_dir / "agents"
         self.skills_dir = self.claude_dir / "skills"
 
-        self._agents_cache: Optional[Dict[str, AgentInfo]] = None
-        self._skills_cache: Optional[Dict[str, SkillInfo]] = None
+        self._agents_cache: dict[str, AgentInfo] | None = None
+        self._skills_cache: dict[str, SkillInfo] | None = None
 
-    def discover_agents(self, force_refresh: bool = False) -> Dict[str, AgentInfo]:
+    def discover_agents(self, force_refresh: bool = False) -> dict[str, AgentInfo]:
         """
         Discover all available agents.
 
@@ -79,13 +86,13 @@ class AgentSkillDiscovery:
                     agents[info.name] = info
             except Exception as e:
                 # Skip malformed agent files
-                print(f"Warning: Could not parse agent {agent_file.name}: {e}")
+                logger.warning("Could not parse agent %s: %s", agent_file.name, e)
                 continue
 
         self._agents_cache = agents
         return agents
 
-    def discover_skills(self, force_refresh: bool = False) -> Dict[str, SkillInfo]:
+    def discover_skills(self, force_refresh: bool = False) -> dict[str, SkillInfo]:
         """
         Discover all available skills.
 
@@ -117,23 +124,23 @@ class AgentSkillDiscovery:
                     skills[info.name] = info
             except Exception as e:
                 # Skip malformed skill files
-                print(f"Warning: Could not parse skill {skill_dir.name}: {e}")
+                logger.warning("Could not parse skill %s: %s", skill_dir.name, e)
                 continue
 
         self._skills_cache = skills
         return skills
 
-    def get_agent(self, name: str) -> Optional[AgentInfo]:
+    def get_agent(self, name: str) -> AgentInfo | None:
         """Get specific agent by name."""
         agents = self.discover_agents()
         return agents.get(name)
 
-    def get_skill(self, name: str) -> Optional[SkillInfo]:
+    def get_skill(self, name: str) -> SkillInfo | None:
         """Get specific skill by name."""
         skills = self.discover_skills()
         return skills.get(name)
 
-    def _parse_agent_file(self, file_path: Path) -> Optional[AgentInfo]:
+    def _parse_agent_file(self, file_path: Path) -> AgentInfo | None:
         """
         Parse agent markdown file with YAML frontmatter.
 
@@ -172,10 +179,10 @@ class AgentSkillDiscovery:
             description=metadata.get("description", "No description"),
             tools=tools,
             model=metadata.get("model", "sonnet"),
-            file_path=str(file_path)
+            file_path=str(file_path),
         )
 
-    def _parse_skill_file(self, skill_dir: Path, skill_json: Path) -> Optional[SkillInfo]:
+    def _parse_skill_file(self, skill_dir: Path, skill_json: Path) -> SkillInfo | None:
         """
         Parse skill.json metadata file.
 
@@ -190,7 +197,7 @@ class AgentSkillDiscovery:
         try:
             with open(skill_json) as f:
                 metadata = json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             return None
 
         # Get user interface type
@@ -202,10 +209,10 @@ class AgentSkillDiscovery:
             description=metadata.get("description", "No description"),
             command=metadata.get("command", skill_dir.name),
             user_interface=ui_type,
-            file_path=str(skill_dir)
+            file_path=str(skill_dir),
         )
 
-    def build_agent_prompt_section(self, allowed_agents: List[str]) -> str:
+    def build_agent_prompt_section(self, allowed_agents: list[str]) -> str:
         """
         Build prompt section describing available agents.
 
@@ -227,11 +234,13 @@ class AgentSkillDiscovery:
             sections.append(f"- **{agent.name}**: {agent.description}")
             sections.append(f"  Model: {agent.model}")
             sections.append(f"  Tools: {', '.join(agent.tools)}")
-            sections.append(f'  Usage: Task(subagent_type="{agent.name}", prompt="...", description="...")')
+            sections.append(
+                f'  Usage: Task(subagent_type="{agent.name}", prompt="...", description="...")'
+            )
 
         return "\n".join(sections)
 
-    def build_skill_prompt_section(self, allowed_skills: List[str]) -> str:
+    def build_skill_prompt_section(self, allowed_skills: list[str]) -> str:
         """
         Build prompt section describing available skills.
 
@@ -259,7 +268,7 @@ class AgentSkillDiscovery:
 
         return "\n".join(sections)
 
-    def validate_agents(self, requested: List[str]) -> Dict[str, bool]:
+    def validate_agents(self, requested: list[str]) -> dict[str, bool]:
         """
         Validate that requested agents exist.
 
@@ -272,7 +281,7 @@ class AgentSkillDiscovery:
         agents = self.discover_agents()
         return {name: name in agents for name in requested}
 
-    def validate_skills(self, requested: List[str]) -> Dict[str, bool]:
+    def validate_skills(self, requested: list[str]) -> dict[str, bool]:
         """
         Validate that requested skills exist.
 

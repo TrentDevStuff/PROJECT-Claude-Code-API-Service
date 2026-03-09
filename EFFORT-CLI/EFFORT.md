@@ -1,7 +1,7 @@
 ---
 created: 2026-01-31T10:17:13Z
 updated: 2026-01-31T10:17:13Z
-status: planning
+status: completed
 priority: high
 effort_id: EFFORT-CLI
 project: claude-code-api-service

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Claude Code API Service CLI - Main Entry Point"""
 
+
 import typer
-from typing import Optional
 from rich.console import Console
 
-from .config import config_manager
-from .utils import print_error, print_success, print_info
-
 # Import command groups
-from .commands import service, health, keys, usage, workers, tasks, test, discovery
+from .commands import batch, discovery, health, keys, process, providers, route, service, tasks, test, usage, workers
+from .config import config_manager
+from .utils import print_error, print_info, print_success
 
 app = typer.Typer(
     name="claude-api",
@@ -27,6 +26,10 @@ app.add_typer(usage.app, name="usage")
 app.add_typer(workers.app, name="workers")
 app.add_typer(tasks.app, name="tasks")
 app.add_typer(test.app, name="test")
+app.add_typer(process.app, name="process")
+app.add_typer(providers.app, name="providers")
+app.add_typer(batch.app, name="batch")
+app.add_typer(route.app, name="route")
 app.add_typer(discovery.agents_app, name="agents")
 app.add_typer(discovery.skills_app, name="skills")
 
@@ -35,6 +38,7 @@ app.add_typer(discovery.skills_app, name="skills")
 def version():
     """Show CLI version"""
     from . import __version__
+
     print(f"claude-api version {__version__}")
 
 
@@ -72,6 +76,7 @@ def config_validate():
     """Validate configuration and dependencies"""
     try:
         from .commands.health import deps
+
         deps.callback()  # Run dependency check
         print_success("Configuration validation complete")
 

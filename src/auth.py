@@ -8,16 +8,16 @@ Provides:
 - FastAPI dependency for Bearer token authentication
 """
 
-import sqlite3
-import secrets
-import time
-from datetime import datetime, timedelta
-from typing import Optional, Tuple, Dict
-from pathlib import Path
-from contextlib import contextmanager
-from fastapi import HTTPException, Security
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from __future__ import annotations
 
+import secrets
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from fastapi import HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 # ============================================================================
 # Database Setup
@@ -53,6 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_window_start ON rate_limits(window_start);
 # ============================================================================
 # AuthManager
 # ============================================================================
+
 
 class AuthManager:
     """
@@ -125,12 +126,12 @@ class AuthManager:
                 INSERT INTO api_keys (key, project_id, rate_limit, created_at, revoked)
                 VALUES (?, ?, ?, ?, 0)
                 """,
-                (api_key, project_id, rate_limit, datetime.now())
+                (api_key, project_id, rate_limit, datetime.now()),
             )
 
         return api_key
 
-    def validate_key(self, api_key: str) -> Tuple[bool, Optional[str]]:
+    def validate_key(self, api_key: str) -> tuple[bool, str | None]:
         """
         Validate an API key.
 
@@ -146,7 +147,7 @@ class AuthManager:
                 SELECT project_id, revoked FROM api_keys
                 WHERE key = ?
                 """,
-                (api_key,)
+                (api_key,),
             )
             row = cursor.fetchone()
 
@@ -173,10 +174,7 @@ class AuthManager:
 
         with self._get_connection() as conn:
             # Get rate limit for this key
-            cursor = conn.execute(
-                "SELECT rate_limit FROM api_keys WHERE key = ?",
-                (api_key,)
-            )
+            cursor = conn.execute("SELECT rate_limit FROM api_keys WHERE key = ?", (api_key,))
             row = cursor.fetchone()
 
             if row is None:
@@ -190,7 +188,7 @@ class AuthManager:
                 SELECT request_count FROM rate_limits
                 WHERE api_key = ? AND window_start = ?
                 """,
-                (api_key, window_start)
+                (api_key, window_start),
             )
             limit_row = cursor.fetchone()
 
@@ -201,7 +199,7 @@ class AuthManager:
                     INSERT INTO rate_limits (api_key, window_start, request_count)
                     VALUES (?, ?, 1)
                     """,
-                    (api_key, window_start)
+                    (api_key, window_start),
                 )
                 current_count = 1
             else:
@@ -218,7 +216,7 @@ class AuthManager:
                     SET request_count = request_count + 1
                     WHERE api_key = ? AND window_start = ?
                     """,
-                    (api_key, window_start)
+                    (api_key, window_start),
                 )
 
             # Update last_used_at
@@ -228,7 +226,7 @@ class AuthManager:
                 SET last_used_at = ?
                 WHERE key = ?
                 """,
-                (now, api_key)
+                (now, api_key),
             )
 
         return True
@@ -250,11 +248,11 @@ class AuthManager:
                 SET revoked = 1
                 WHERE key = ?
                 """,
-                (api_key,)
+                (api_key,),
             )
             return cursor.rowcount > 0
 
-    def get_key_info(self, api_key: str) -> Optional[Dict]:
+    def get_key_info(self, api_key: str) -> dict | None:
         """
         Get information about an API key.
 
@@ -271,7 +269,7 @@ class AuthManager:
                 FROM api_keys
                 WHERE key = ?
                 """,
-                (api_key,)
+                (api_key,),
             )
             row = cursor.fetchone()
 
@@ -295,7 +293,7 @@ class AuthManager:
                 DELETE FROM rate_limits
                 WHERE window_start < ?
                 """,
-                (cutoff,)
+                (cutoff,),
             )
             deleted = cursor.rowcount
 
@@ -307,7 +305,7 @@ class AuthManager:
 # ============================================================================
 
 # Global auth manager instance (initialized in main.py)
-auth_manager: Optional[AuthManager] = None
+auth_manager: AuthManager | None = None
 
 # HTTP Bearer token security scheme
 security = HTTPBearer()
@@ -319,9 +317,7 @@ def initialize_auth(manager: AuthManager):
     auth_manager = manager
 
 
-async def verify_api_key(
-    credentials: HTTPAuthorizationCredentials = Security(security)
-) -> str:
+async def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security)) -> str:
     """
     FastAPI dependency for API key verification.
 
@@ -337,10 +333,7 @@ async def verify_api_key(
         project_id: Project ID associated with the API key
     """
     if auth_manager is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Authentication not initialized"
-        )
+        raise HTTPException(status_code=500, detail="Authentication not initialized")
 
     api_key = credentials.credentials
 
@@ -348,16 +341,10 @@ async def verify_api_key(
     is_valid, project_id = auth_manager.validate_key(api_key)
 
     if not is_valid:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or revoked API key"
-        )
+        raise HTTPException(status_code=401, detail="Invalid or revoked API key")
 
     # Check rate limit
     if not auth_manager.check_rate_limit(api_key):
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded. Please try again later."
-        )
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
 
     return project_id

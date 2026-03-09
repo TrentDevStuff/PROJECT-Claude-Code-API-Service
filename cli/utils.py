@@ -1,14 +1,14 @@
 """Utility functions for CLI formatting and helpers"""
 
-import json
-from typing import Any, Dict, List, Optional
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from datetime import datetime
+from __future__ import annotations
 
+import json
+from datetime import datetime
+from typing import Any
+
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
 
 console = Console()
 
@@ -17,7 +17,7 @@ class OutputFormatter:
     """Format output in different modes"""
 
     @staticmethod
-    def format(data: Any, format_type: str = "table", title: Optional[str] = None) -> None:
+    def format(data: Any, format_type: str = "table", title: str | None = None) -> None:
         """Format and print data"""
         if format_type == "json":
             print(json.dumps(data, indent=2, default=str))
@@ -27,7 +27,7 @@ class OutputFormatter:
             OutputFormatter._format_table(data, title)
 
     @staticmethod
-    def _format_table(data: Any, title: Optional[str] = None) -> None:
+    def _format_table(data: Any, title: str | None = None) -> None:
         """Format data as rich table"""
         if isinstance(data, dict):
             table = Table(title=title, show_header=False)
@@ -60,7 +60,7 @@ def print_success(message: str):
     console.print(f"✓ {message}", style="green")
 
 
-def print_error(message: str, suggestion: Optional[str] = None):
+def print_error(message: str, suggestion: str | None = None):
     """Print error message with optional suggestion"""
     console.print(f"✗ {message}", style="red")
     if suggestion:
@@ -113,13 +113,13 @@ def format_tokens(tokens: int) -> str:
 def format_timestamp(timestamp: str) -> str:
     """Format ISO timestamp to readable format"""
     try:
-        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except:
+    except Exception:
         return timestamp
 
 
-def create_status_table(title: str, items: List[tuple]) -> Table:
+def create_status_table(title: str, items: list[tuple]) -> Table:
     """Create a two-column status table"""
     table = Table(title=title, show_header=False)
     table.add_column("Item", style="cyan", no_wrap=True)
@@ -131,8 +131,9 @@ def create_status_table(title: str, items: List[tuple]) -> Table:
     return table
 
 
-def create_data_table(title: str, columns: List[str], rows: List[List[str]],
-                     column_styles: Optional[List[str]] = None) -> Table:
+def create_data_table(
+    title: str, columns: list[str], rows: list[list[str]], column_styles: list[str] | None = None
+) -> Table:
     """Create a data table with custom columns"""
     table = Table(title=title)
 
@@ -152,7 +153,7 @@ def spinner_context(message: str):
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
-        transient=True
+        transient=True,
     )
 
 
@@ -164,4 +165,4 @@ def confirm(message: str, default: bool = False) -> bool:
     if not response:
         return default
 
-    return response in ('y', 'yes')
+    return response in ("y", "yes")

@@ -3,8 +3,6 @@ Security Validator
 Validates commands and file paths to prevent malicious operations
 """
 
-from typing import List, Tuple
-import re
 import os
 
 
@@ -69,7 +67,7 @@ class SecurityValidator:
     WORKSPACE_PREFIX = "/workspace/"
     PROJECT_PREFIX = "/project/"
 
-    def validate_command(self, cmd: str) -> Tuple[bool, str]:
+    def validate_command(self, cmd: str) -> tuple[bool, str]:
         """
         Validate a bash command for security
 
@@ -97,13 +95,14 @@ class SecurityValidator:
             return False, "Background processes must end with '&'"
 
         # Block redirects to sensitive locations
-        if ">" in cmd or ">>" in cmd:
-            if any(sensitive in cmd_lower for sensitive in ["/etc/", "/root/", "/home/", "/dev/"]):
-                return False, "Redirect to sensitive location blocked"
+        if (">" in cmd or ">>" in cmd) and any(
+            sensitive in cmd_lower for sensitive in ["/etc/", "/root/", "/home/", "/dev/"]
+        ):
+            return False, "Redirect to sensitive location blocked"
 
         return True, ""
 
-    def validate_path(self, path: str, allow_write: bool = False) -> Tuple[bool, str]:
+    def validate_path(self, path: str, allow_write: bool = False) -> tuple[bool, str]:
         """
         Validate a file path for security
 
@@ -135,9 +134,14 @@ class SecurityValidator:
 
         # For read operations, must be in workspace or project (read-only)
         else:
-            if not (normalized.startswith(self.WORKSPACE_PREFIX) or
-                   normalized.startswith(self.PROJECT_PREFIX)):
-                return False, f"Read access only allowed in {self.WORKSPACE_PREFIX} or {self.PROJECT_PREFIX}"
+            if not (
+                normalized.startswith(self.WORKSPACE_PREFIX)
+                or normalized.startswith(self.PROJECT_PREFIX)
+            ):
+                return (
+                    False,
+                    f"Read access only allowed in {self.WORKSPACE_PREFIX} or {self.PROJECT_PREFIX}",
+                )
 
         return True, ""
 
@@ -153,9 +157,14 @@ class SecurityValidator:
         """
         # Keys to remove (case-insensitive)
         sensitive_keys = {
-            "API_KEY", "SECRET_KEY", "ACCESS_TOKEN", "PASSWORD",
-            "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
-            "GITHUB_TOKEN", "ANTHROPIC_API_KEY"
+            "API_KEY",
+            "SECRET_KEY",
+            "ACCESS_TOKEN",
+            "PASSWORD",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "GITHUB_TOKEN",
+            "ANTHROPIC_API_KEY",
         }
 
         sanitized = {}
@@ -166,12 +175,33 @@ class SecurityValidator:
 
         return sanitized
 
-    def get_allowed_commands(self) -> List[str]:
+    def get_allowed_commands(self) -> list[str]:
         """Get list of explicitly allowed safe commands"""
         return [
-            "ls", "cat", "head", "tail", "grep", "find", "echo",
-            "pwd", "cd", "mkdir", "touch", "cp", "mv",
-            "python", "python3", "pip", "pytest",
-            "git status", "git log", "git diff",
-            "wc", "sort", "uniq", "cut", "awk", "sed",
+            "ls",
+            "cat",
+            "head",
+            "tail",
+            "grep",
+            "find",
+            "echo",
+            "pwd",
+            "cd",
+            "mkdir",
+            "touch",
+            "cp",
+            "mv",
+            "python",
+            "python3",
+            "pip",
+            "pytest",
+            "git status",
+            "git log",
+            "git diff",
+            "wc",
+            "sort",
+            "uniq",
+            "cut",
+            "awk",
+            "sed",
         ]

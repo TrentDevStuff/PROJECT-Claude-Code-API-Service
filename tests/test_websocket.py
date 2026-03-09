@@ -10,17 +10,18 @@ Tests:
 - Usage tracking
 """
 
-import pytest
-import json
 import asyncio
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
+import json
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocket
 
 from main import app
+from src.budget_manager import BudgetManager
 from src.websocket import WebSocketStreamer, initialize_websocket
 from src.worker_pool import WorkerPool
-from src.budget_manager import BudgetManager
 
 
 @pytest.fixture
@@ -55,7 +56,9 @@ class TestWebSocketConnection:
         # Create mock WebSocket
         mock_ws = AsyncMock(spec=WebSocket)
         mock_ws.accept = AsyncMock()
-        mock_ws.receive_text = AsyncMock(side_effect=asyncio.CancelledError())  # Simulate disconnect
+        mock_ws.receive_text = AsyncMock(
+            side_effect=asyncio.CancelledError()
+        )  # Simulate disconnect
 
         # Handle connection (should not raise)
         try:
@@ -96,14 +99,10 @@ class TestStreamingResponse:
         # Mock subprocess output
         mock_output = {
             "content": [{"text": "Hello world"}],
-            "usage": {
-                "input_tokens": 10,
-                "output_tokens": 5,
-                "total_tokens": 15
-            }
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
         }
 
-        with patch('subprocess.Popen') as mock_popen:
+        with patch("subprocess.Popen") as mock_popen:
             # Mock process
             mock_process = MagicMock()
             mock_process.stdout = [json.dumps(mock_output)]
@@ -111,12 +110,7 @@ class TestStreamingResponse:
             mock_process.wait.return_value = 0
             mock_popen.return_value = mock_process
 
-            await streamer._stream_response(
-                mock_ws,
-                "Test prompt",
-                "haiku",
-                "test-project"
-            )
+            await streamer._stream_response(mock_ws, "Test prompt", "haiku", "test-project")
 
         # Verify tokens were sent
         calls = mock_ws.send_json.call_args_list
@@ -144,26 +138,17 @@ class TestStreamingResponse:
         long_text = "This is a longer response " * 20  # ~140 chars
         mock_output = {
             "content": [{"text": long_text}],
-            "usage": {
-                "input_tokens": 10,
-                "output_tokens": 50,
-                "total_tokens": 60
-            }
+            "usage": {"input_tokens": 10, "output_tokens": 50, "total_tokens": 60},
         }
 
-        with patch('subprocess.Popen') as mock_popen:
+        with patch("subprocess.Popen") as mock_popen:
             mock_process = MagicMock()
             mock_process.stdout = [json.dumps(mock_output)]
             mock_process.stderr = []
             mock_process.wait.return_value = 0
             mock_popen.return_value = mock_process
 
-            await streamer._stream_response(
-                mock_ws,
-                "Test prompt",
-                "haiku",
-                "test-project"
-            )
+            await streamer._stream_response(mock_ws, "Test prompt", "haiku", "test-project")
 
         # Verify multiple token chunks were sent
         calls = mock_ws.send_json.call_args_list
@@ -188,9 +173,7 @@ class TestWebSocketErrorHandling:
         mock_ws.send_json = AsyncMock()
 
         # Send invalid JSON, then disconnect
-        mock_ws.receive_text = AsyncMock(
-            side_effect=["invalid json", asyncio.CancelledError()]
-        )
+        mock_ws.receive_text = AsyncMock(side_effect=["invalid json", asyncio.CancelledError()])
 
         try:
             await streamer.handle_connection(mock_ws)
@@ -199,8 +182,7 @@ class TestWebSocketErrorHandling:
 
         # Verify error was sent
         error_calls = [
-            c for c in mock_ws.send_json.call_args_list
-            if c[0][0].get("type") == "error"
+            c for c in mock_ws.send_json.call_args_list if c[0][0].get("type") == "error"
         ]
         assert len(error_calls) > 0
         assert "Invalid JSON" in error_calls[0][0][0]["error"]
@@ -213,9 +195,7 @@ class TestWebSocketErrorHandling:
         mock_ws.send_json = AsyncMock()
 
         message = json.dumps({"type": "unknown"})
-        mock_ws.receive_text = AsyncMock(
-            side_effect=[message, asyncio.CancelledError()]
-        )
+        mock_ws.receive_text = AsyncMock(side_effect=[message, asyncio.CancelledError()])
 
         try:
             await streamer.handle_connection(mock_ws)
@@ -224,8 +204,7 @@ class TestWebSocketErrorHandling:
 
         # Verify error was sent
         error_calls = [
-            c for c in mock_ws.send_json.call_args_list
-            if c[0][0].get("type") == "error"
+            c for c in mock_ws.send_json.call_args_list if c[0][0].get("type") == "error"
         ]
         assert len(error_calls) > 0
         assert "Unknown message type" in error_calls[0][0][0]["error"]
@@ -240,15 +219,11 @@ class TestWebSocketErrorHandling:
         # Mock budget check to fail
         mock_budget_manager.check_budget = AsyncMock(return_value=False)
 
-        message = json.dumps({
-            "type": "chat",
-            "model": "haiku",
-            "messages": [{"role": "user", "content": "Hello"}]
-        })
-
-        mock_ws.receive_text = AsyncMock(
-            side_effect=[message, asyncio.CancelledError()]
+        message = json.dumps(
+            {"type": "chat", "model": "haiku", "messages": [{"role": "user", "content": "Hello"}]}
         )
+
+        mock_ws.receive_text = AsyncMock(side_effect=[message, asyncio.CancelledError()])
 
         try:
             await streamer.handle_connection(mock_ws)
@@ -257,8 +232,7 @@ class TestWebSocketErrorHandling:
 
         # Verify budget error was sent
         error_calls = [
-            c for c in mock_ws.send_json.call_args_list
-            if c[0][0].get("type") == "error"
+            c for c in mock_ws.send_json.call_args_list if c[0][0].get("type") == "error"
         ]
         assert len(error_calls) > 0
         assert "Budget exceeded" in error_calls[0][0][0]["error"]
@@ -270,15 +244,15 @@ class TestWebSocketErrorHandling:
         mock_ws.accept = AsyncMock()
         mock_ws.send_json = AsyncMock()
 
-        message = json.dumps({
-            "type": "chat",
-            "model": "invalid-model",
-            "messages": [{"role": "user", "content": "Hello"}]
-        })
-
-        mock_ws.receive_text = AsyncMock(
-            side_effect=[message, asyncio.CancelledError()]
+        message = json.dumps(
+            {
+                "type": "chat",
+                "model": "invalid-model",
+                "messages": [{"role": "user", "content": "Hello"}],
+            }
         )
+
+        mock_ws.receive_text = AsyncMock(side_effect=[message, asyncio.CancelledError()])
 
         try:
             await streamer.handle_connection(mock_ws)
@@ -287,8 +261,7 @@ class TestWebSocketErrorHandling:
 
         # Verify invalid model error was sent
         error_calls = [
-            c for c in mock_ws.send_json.call_args_list
-            if c[0][0].get("type") == "error"
+            c for c in mock_ws.send_json.call_args_list if c[0][0].get("type") == "error"
         ]
         assert len(error_calls) > 0
         assert "Invalid model" in error_calls[0][0][0]["error"]
@@ -299,7 +272,7 @@ class TestWebSocketErrorHandling:
         mock_ws = AsyncMock(spec=WebSocket)
         mock_ws.send_json = AsyncMock()
 
-        with patch('subprocess.Popen') as mock_popen:
+        with patch("subprocess.Popen") as mock_popen:
             # Mock process that exits with error
             mock_process = MagicMock()
             mock_process.stdout = []
@@ -309,12 +282,7 @@ class TestWebSocketErrorHandling:
 
             # Should raise RuntimeError
             with pytest.raises(RuntimeError, match="exited with code 1"):
-                await streamer._stream_response(
-                    mock_ws,
-                    "Test prompt",
-                    "haiku",
-                    "test-project"
-                )
+                await streamer._stream_response(mock_ws, "Test prompt", "haiku", "test-project")
 
 
 class TestMultipleMessages:
@@ -328,25 +296,25 @@ class TestMultipleMessages:
         mock_ws.send_json = AsyncMock()
 
         # Two chat messages, then disconnect
-        message1 = json.dumps({
-            "type": "chat",
-            "model": "haiku",
-            "messages": [{"role": "user", "content": "First message"}]
-        })
+        message1 = json.dumps(
+            {
+                "type": "chat",
+                "model": "haiku",
+                "messages": [{"role": "user", "content": "First message"}],
+            }
+        )
 
-        message2 = json.dumps({
-            "type": "chat",
-            "model": "haiku",
-            "messages": [{"role": "user", "content": "Second message"}]
-        })
+        message2 = json.dumps(
+            {
+                "type": "chat",
+                "model": "haiku",
+                "messages": [{"role": "user", "content": "Second message"}],
+            }
+        )
 
         mock_output = {
             "content": [{"text": "Response"}],
-            "usage": {
-                "input_tokens": 10,
-                "output_tokens": 5,
-                "total_tokens": 15
-            }
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
         }
 
         messages_received = 0
@@ -364,7 +332,7 @@ class TestMultipleMessages:
 
         mock_ws.receive_text = AsyncMock(side_effect=receive_side_effect)
 
-        with patch('subprocess.Popen') as mock_popen:
+        with patch("subprocess.Popen") as mock_popen:
             mock_process = MagicMock()
             mock_process.stdout = [json.dumps(mock_output)]
             mock_process.stderr = []
@@ -420,8 +388,8 @@ class TestWebSocketIntegration:
     def test_websocket_endpoint_exists(self):
         """Test that WebSocket endpoint is registered."""
         # Initialize services
-        from src.worker_pool import WorkerPool
         from src.budget_manager import BudgetManager
+        from src.worker_pool import WorkerPool
 
         worker_pool = WorkerPool(max_workers=1)
         budget_manager = BudgetManager(db_path=":memory:")

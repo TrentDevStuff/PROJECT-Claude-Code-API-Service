@@ -1,6 +1,6 @@
 # API Reference - Claude Code API Service
 
-Complete REST API for Claude Code CLI with worker pool management, intelligent model routing, and per-project budget tracking.
+Complete REST API for Claude Code with dual execution paths (SDK and CLI), worker pool management, intelligent model routing, agentic task execution, and per-project budget tracking.
 
 ## Base URL
 
@@ -196,7 +196,149 @@ Get model routing recommendation for a prompt.
 
 ---
 
-### 5. GET /health
+### 5. POST /v1/process
+
+AI Services compatible endpoint with dual execution paths. Defaults to SDK for fast completions; set `use_cli: true` for full Claude Code features.
+
+**Features:**
+- Multi-provider model mapping (OpenAI, Anthropic, Google → Claude)
+- SDK path by default (~50ms overhead + inference)
+- CLI path opt-in for tools, agents, skills, MCP
+- Budget enforcement and usage tracking
+
+**Request Body:**
+```json
+{
+  "provider": "anthropic",
+  "model_name": "claude-3-sonnet",
+  "user_message": "Explain quantum computing",
+  "max_tokens": 1000,
+  "temperature": 0.7,
+  "use_cli": false
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `provider` | string | Yes | — | AI provider (`"anthropic"`, `"claudecode"`, `"openai"`, etc.) |
+| `model_name` | string | Yes | — | Model name (mapped to haiku/sonnet/opus) |
+| `messages` | array | No | — | Full conversation history (Message objects) |
+| `system_message` | string | No | — | System prompt |
+| `user_message` | string | No | — | User input (use ONE of messages/system_message+user_message/content) |
+| `content` | any | No | — | Multimodal content (text only) |
+| `max_tokens` | integer | No | 1000 | Maximum tokens to generate |
+| `temperature` | float | No | 0.7 | Sampling temperature |
+| `use_cli` | boolean | No | false | Use CLI instead of SDK. Required for tools/agents/skills/MCP. |
+| `project_id` | string | No | "default" | Project identifier for budget tracking |
+
+**Response:**
+```json
+{
+  "content": "Quantum computing uses quantum mechanical phenomena...",
+  "model": "claude-3-sonnet",
+  "provider": "anthropic",
+  "metadata": {
+    "actual_model": "sonnet",
+    "usage": {"input_tokens": 15, "output_tokens": 200, "total_tokens": 215},
+    "cost_usd": 0.003,
+    "finish_reason": "stop",
+    "mapped_from": "anthropic:claude-3-sonnet → claudecode:sonnet"
+  }
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `400` - No messages provided
+- `403` - Budget exceeded
+- `500` - SDK/CLI completion failed
+- `501` - Streaming or async not yet implemented
+
+---
+
+### 6. POST /v1/task
+
+Execute complex multi-step agentic tasks with permission validation. Always uses CLI path.
+
+See [Agentic Tasks API](api-reference/agentic-tasks.md) for full documentation.
+
+**Request Body:**
+```json
+{
+  "description": "Analyze src/api.py for security vulnerabilities",
+  "allow_tools": ["Read", "Grep"],
+  "allow_agents": ["security-auditor"],
+  "timeout": 300,
+  "max_cost": 1.0
+}
+```
+
+**Status Codes:**
+- `200` - Task completed
+- `403` - Permission denied (tool/agent/skill not allowed for API key)
+- `500` - Execution failed
+
+---
+
+### 7. GET /v1/capabilities
+
+List available Claude Code agents and skills that can be invoked through `/v1/task`.
+
+**Response:**
+```json
+{
+  "agents": [
+    {"name": "security-auditor", "description": "...", "tools": ["Read", "Grep"], "model": "sonnet"}
+  ],
+  "skills": [
+    {"name": "semantic-text-matcher", "description": "...", "command": "semantic-text-matcher"}
+  ],
+  "agents_count": 15,
+  "skills_count": 10
+}
+```
+
+---
+
+### 8. GET /v1/providers
+
+List available AI providers.
+
+**Response:**
+```json
+[
+  {"name": "claudecode", "available": true, "models": ["haiku", "sonnet", "opus"]},
+  {"name": "anthropic", "available": true, "models": ["haiku", "sonnet", "opus", "claude-3-haiku", "claude-3-sonnet", "claude-3-opus"]}
+]
+```
+
+---
+
+### 9. GET /v1/providers/{provider}/models
+
+Get model details for a specific provider.
+
+**Response:**
+```json
+{
+  "provider": "anthropic",
+  "models": {
+    "haiku": {"max_tokens": 4096, "context_window": 200000, "supports_functions": false, "supports_vision": true},
+    "sonnet": {"max_tokens": 8192, "context_window": 200000, "supports_functions": false, "supports_vision": true},
+    "opus": {"max_tokens": 4096, "context_window": 200000, "supports_functions": false, "supports_vision": true}
+  }
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `404` - Provider not supported
+
+---
+
+### 10. GET /health
 
 Health check endpoint with service status.
 
@@ -214,7 +356,7 @@ Health check endpoint with service status.
 
 ---
 
-### 6. GET /
+### 11. GET /
 
 Root endpoint with API information.
 
@@ -397,14 +539,17 @@ Common error codes:
 
 ---
 
-## Files Created
+## Key Files
 
 | File | Purpose |
 |------|---------|
 | `src/api.py` | API endpoints, Pydantic models, routing logic |
+| `src/compatibility_adapter.py` | `/v1/process` request/response models, model mapping |
+| `src/direct_completion.py` | SDK direct path (Anthropic Python client) |
+| `src/agentic_executor.py` | `/v1/task` execution engine |
+| `src/agent_discovery.py` | Agent/skill discovery for `/v1/capabilities` |
 | `main.py` | FastAPI app with lifespan management |
-| `tests/test_api.py` | Comprehensive API tests (15 tests) |
-| `examples/api_usage.py` | Usage examples for all endpoints |
+| `tests/test_api.py` | API tests |
 | `docs/API_REFERENCE.md` | This documentation |
 
 ---

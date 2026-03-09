@@ -9,20 +9,26 @@ Provides real-time token streaming from Claude CLI with:
 - Integration with WorkerPool and BudgetManager
 """
 
-import json
+from __future__ import annotations
+
 import asyncio
+import json
+import logging
 import subprocess
 import tempfile
-from pathlib import Path
-from typing import Optional, Dict, Any
-from fastapi import WebSocket, WebSocketDisconnect
 import uuid
+from pathlib import Path
+from typing import Any
 
-from src.worker_pool import WorkerPool
+from fastapi import WebSocket, WebSocketDisconnect
+
+logger = logging.getLogger(__name__)
+
+from src.agentic_executor import AgenticExecutor, AgenticTaskRequest
+from src.audit_logger import AuditLogger
 from src.budget_manager import BudgetManager
 from src.permission_manager import PermissionManager
-from src.audit_logger import AuditLogger
-from src.agentic_executor import AgenticExecutor, AgenticTaskRequest
+from src.worker_pool import WorkerPool
 
 
 class WebSocketStreamer:
@@ -47,8 +53,8 @@ class WebSocketStreamer:
         self,
         worker_pool: WorkerPool,
         budget_manager: BudgetManager,
-        permission_manager: Optional[PermissionManager] = None,
-        audit_logger: Optional[AuditLogger] = None
+        permission_manager: PermissionManager | None = None,
+        audit_logger: AuditLogger | None = None,
     ):
         """
         Initialize WebSocket streamer.
@@ -63,7 +69,7 @@ class WebSocketStreamer:
         self.budget_manager = budget_manager
         self.permission_manager = permission_manager or PermissionManager()
         self.audit_logger = audit_logger or AuditLogger()
-        self.active_connections: Dict[str, WebSocket] = {}
+        self.active_connections: dict[str, WebSocket] = {}
 
     async def handle_connection(self, websocket: WebSocket):
         """
@@ -84,10 +90,7 @@ class WebSocketStreamer:
                 try:
                     message = json.loads(data)
                 except json.JSONDecodeError:
-                    await websocket.send_json({
-                        "type": "error",
-                        "error": "Invalid JSON format"
-                    })
+                    await websocket.send_json({"type": "error", "error": "Invalid JSON format"})
                     continue
 
                 # Handle different message types
@@ -96,10 +99,9 @@ class WebSocketStreamer:
                 elif message.get("type") == "agentic_task":
                     await self._handle_agentic_task(websocket, message)
                 else:
-                    await websocket.send_json({
-                        "type": "error",
-                        "error": f"Unknown message type: {message.get('type')}"
-                    })
+                    await websocket.send_json(
+                        {"type": "error", "error": f"Unknown message type: {message.get('type')}"}
+                    )
 
         except WebSocketDisconnect:
             # Clean disconnect
@@ -107,18 +109,15 @@ class WebSocketStreamer:
         except Exception as e:
             # Unexpected error
             try:
-                await websocket.send_json({
-                    "type": "error",
-                    "error": f"Server error: {str(e)}"
-                })
-            except:
+                await websocket.send_json({"type": "error", "error": f"Server error: {str(e)}"})
+            except Exception:
                 pass  # Connection already closed
         finally:
             # Cleanup
             if connection_id in self.active_connections:
                 del self.active_connections[connection_id]
 
-    async def _handle_chat(self, websocket: WebSocket, message: Dict[str, Any]):
+    async def _handle_chat(self, websocket: WebSocket, message: dict[str, Any]):
         """
         Handle a chat message and stream the response.
 
@@ -132,44 +131,41 @@ class WebSocketStreamer:
         project_id = message.get("project_id", "default")
 
         if not messages:
-            await websocket.send_json({
-                "type": "error",
-                "error": "No messages provided"
-            })
+            await websocket.send_json({"type": "error", "error": "No messages provided"})
             return
 
         # Validate model
         if model not in ["haiku", "sonnet", "opus"]:
-            await websocket.send_json({
-                "type": "error",
-                "error": f"Invalid model: {model}. Must be haiku, sonnet, or opus"
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "error": f"Invalid model: {model}. Must be haiku, sonnet, or opus",
+                }
+            )
             return
 
         # Combine messages into prompt
-        prompt = "\n\n".join([f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in messages])
+        prompt = "\n\n".join(
+            [f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in messages]
+        )
 
         # Check budget
         estimated_tokens = len(prompt.split()) * 2  # Rough estimate
         budget_ok = await self.budget_manager.check_budget(project_id, estimated_tokens)
 
         if not budget_ok:
-            await websocket.send_json({
-                "type": "error",
-                "error": f"Budget exceeded for project {project_id}"
-            })
+            await websocket.send_json(
+                {"type": "error", "error": f"Budget exceeded for project {project_id}"}
+            )
             return
 
         # Stream response
         try:
             await self._stream_response(websocket, prompt, model, project_id)
         except Exception as e:
-            await websocket.send_json({
-                "type": "error",
-                "error": f"Streaming error: {str(e)}"
-            })
+            await websocket.send_json({"type": "error", "error": f"Streaming error: {str(e)}"})
 
-    async def _handle_agentic_task(self, websocket: WebSocket, message: Dict[str, Any]):
+    async def _handle_agentic_task(self, websocket: WebSocket, message: dict[str, Any]):
         """
         Handle an agentic task with real-time streaming.
 
@@ -201,10 +197,9 @@ class WebSocketStreamer:
 
         # Validate API key
         if not api_key:
-            await websocket.send_json({
-                "type": "error",
-                "error": "api_key required for agentic tasks"
-            })
+            await websocket.send_json(
+                {"type": "error", "error": "api_key required for agentic tasks"}
+            )
             return
 
         # Validate permissions
@@ -214,19 +209,18 @@ class WebSocketStreamer:
             requested_agents=allow_agents,
             requested_skills=allow_skills,
             timeout=timeout,
-            max_cost=max_cost
+            max_cost=max_cost,
         )
 
         if not validation.allowed:
-            await websocket.send_json({
-                "type": "error",
-                "error": f"Permission denied: {validation.reason}"
-            })
+            await websocket.send_json(
+                {"type": "error", "error": f"Permission denied: {validation.reason}"}
+            )
             await self.audit_logger.log_security_event(
                 task_id="websocket_denied",
                 api_key=api_key,
                 event="permission_denied",
-                details={"reason": validation.reason}
+                details={"reason": validation.reason},
             )
             return
 
@@ -234,7 +228,7 @@ class WebSocketStreamer:
         executor = AgenticExecutor(
             worker_pool=self.worker_pool,
             budget_manager=self.budget_manager,
-            audit_logger=self.audit_logger
+            audit_logger=self.audit_logger,
         )
 
         # Build request
@@ -244,7 +238,7 @@ class WebSocketStreamer:
             allow_agents=allow_agents,
             allow_skills=allow_skills,
             timeout=timeout,
-            max_cost=max_cost
+            max_cost=max_cost,
         )
 
         # Log task start
@@ -253,22 +247,16 @@ class WebSocketStreamer:
             task_id=task_id,
             api_key=api_key,
             tool="websocket_agentic_task",
-            args={"description": description}
+            args={"description": description},
         )
 
         try:
             # Stream execution events
             await self._stream_agentic_execution(websocket, executor, request, task_id, api_key)
         except Exception as e:
-            await websocket.send_json({
-                "type": "error",
-                "error": f"Task execution error: {str(e)}"
-            })
+            await websocket.send_json({"type": "error", "error": f"Task execution error: {str(e)}"})
             await self.audit_logger.log_security_event(
-                task_id=task_id,
-                api_key=api_key,
-                event="task_error",
-                details={"error": str(e)}
+                task_id=task_id, api_key=api_key, event="task_error", details={"error": str(e)}
             )
 
     async def _stream_agentic_execution(
@@ -277,7 +265,7 @@ class WebSocketStreamer:
         executor: AgenticExecutor,
         request: AgenticTaskRequest,
         task_id: str,
-        api_key: str
+        api_key: str,
     ):
         """
         Stream agentic task execution events in real-time.
@@ -288,10 +276,7 @@ class WebSocketStreamer:
         to support async streaming.
         """
         # Send start event
-        await websocket.send_json({
-            "type": "thinking",
-            "content": "Starting task execution..."
-        })
+        await websocket.send_json({"type": "thinking", "content": "Starting task execution..."})
 
         # Execute task (currently blocking - would need async streaming in executor)
         response = await executor.execute_task(request)
@@ -299,35 +284,33 @@ class WebSocketStreamer:
         # Send result (handle both Pydantic models and plain dicts)
         def to_dict(obj):
             """Convert Pydantic model to dict, or return as-is if already dict."""
-            if hasattr(obj, 'model_dump'):
+            if hasattr(obj, "model_dump"):
                 return obj.model_dump()
-            elif hasattr(obj, 'dict'):
+            elif hasattr(obj, "dict"):
                 return obj.dict()
             return obj
 
-        await websocket.send_json({
-            "type": "result",
-            "status": response.status,
-            "result": response.result,
-            "execution_log": [to_dict(entry) for entry in response.execution_log],
-            "artifacts": [to_dict(artifact) for artifact in response.artifacts],
-            "usage": to_dict(response.usage) if response.usage else None
-        })
+        await websocket.send_json(
+            {
+                "type": "result",
+                "status": response.status,
+                "result": response.result,
+                "execution_log": [to_dict(entry) for entry in response.execution_log],
+                "artifacts": [to_dict(artifact) for artifact in response.artifacts],
+                "usage": to_dict(response.usage) if response.usage else None,
+            }
+        )
 
         # Log completion
         await self.audit_logger.log_tool_call(
             task_id=task_id,
             api_key=api_key,
             tool="websocket_agentic_task_complete",
-            args={"status": response.status}
+            args={"status": response.status},
         )
 
     async def _stream_response(
-        self,
-        websocket: WebSocket,
-        prompt: str,
-        model: str,
-        project_id: str
+        self, websocket: WebSocket, prompt: str, model: str, project_id: str
     ):
         """
         Stream response tokens from Claude CLI.
@@ -349,9 +332,12 @@ class WebSocketStreamer:
             # Build command for streaming
             cmd = [
                 "claude",
-                "-p", f"$(cat {prompt_file})",
-                "--model", model,
-                "--output-format", "json"
+                "-p",
+                f"$(cat {prompt_file})",
+                "--model",
+                model,
+                "--output-format",
+                "json",
             ]
 
             # Start process
@@ -361,7 +347,7 @@ class WebSocketStreamer:
                 stderr=subprocess.PIPE,
                 shell=True,
                 text=True,
-                bufsize=1  # Line buffered
+                bufsize=1,  # Line buffered
             )
 
             # Stream output
@@ -372,7 +358,7 @@ class WebSocketStreamer:
                 if process.stderr:
                     for line in process.stderr:
                         if line.strip():
-                            print(f"Claude CLI stderr: {line.strip()}")
+                            logger.debug("Claude CLI stderr: %s", line.strip())
 
             # Start stderr reader
             stderr_task = asyncio.create_task(
@@ -396,7 +382,7 @@ class WebSocketStreamer:
                 # Try to get stderr output, ignore if cancelled
                 try:
                     await asyncio.wait_for(stderr_task, timeout=0.1)
-                except (asyncio.CancelledError, asyncio.TimeoutError):
+                except (TimeoutError, asyncio.CancelledError):
                     pass
                 raise RuntimeError(f"Claude CLI exited with code {return_code}")
 
@@ -422,45 +408,42 @@ class WebSocketStreamer:
             # In a real implementation, we'd parse streaming output from Claude CLI
             chunk_size = max(1, len(content) // 20)  # ~20 chunks
             for i in range(0, len(content), chunk_size):
-                chunk = content[i:i + chunk_size]
-                await websocket.send_json({
-                    "type": "token",
-                    "content": chunk
-                })
+                chunk = content[i : i + chunk_size]
+                await websocket.send_json({"type": "token", "content": chunk})
                 # Small delay to simulate streaming
                 await asyncio.sleep(0.01)
 
             # Send completion message
-            await websocket.send_json({
-                "type": "done",
-                "usage": {
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "total_tokens": total_tokens
-                },
-                "cost": cost,
-                "model": model
-            })
+            await websocket.send_json(
+                {
+                    "type": "done",
+                    "usage": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens,
+                    },
+                    "cost": cost,
+                    "model": model,
+                }
+            )
 
             # Track usage
             await self.budget_manager.track_usage(
-                project_id=project_id,
-                model=model,
-                tokens=total_tokens,
-                cost=cost
+                project_id=project_id, model=model, tokens=total_tokens, cost=cost
             )
 
         except subprocess.TimeoutExpired:
             process.kill()
             raise RuntimeError("Request timed out after 30 seconds")
 
-        except Exception as e:
+        except Exception:
             raise
 
         finally:
             # Cleanup
             if temp_dir.exists():
                 import shutil
+
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
@@ -486,14 +469,14 @@ class WebSocketStreamer:
 
 
 # Global streamer instance
-_streamer: Optional[WebSocketStreamer] = None
+_streamer: WebSocketStreamer | None = None
 
 
 def initialize_websocket(
     worker_pool: WorkerPool,
     budget_manager: BudgetManager,
-    permission_manager: Optional[PermissionManager] = None,
-    audit_logger: Optional[AuditLogger] = None
+    permission_manager: PermissionManager | None = None,
+    audit_logger: AuditLogger | None = None,
 ):
     """
     Initialize the WebSocket streamer.
@@ -505,12 +488,7 @@ def initialize_websocket(
         audit_logger: AuditLogger instance for audit logging
     """
     global _streamer
-    _streamer = WebSocketStreamer(
-        worker_pool,
-        budget_manager,
-        permission_manager,
-        audit_logger
-    )
+    _streamer = WebSocketStreamer(worker_pool, budget_manager, permission_manager, audit_logger)
 
 
 async def websocket_endpoint(websocket: WebSocket):
