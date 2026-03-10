@@ -218,14 +218,17 @@ async def chat_completion(
 
     # Submit task to worker pool
     t_submit = time.monotonic()
-    task_id = worker_pool.submit(
-        prompt=prompt,
-        model=request.model,
-        project_id=project_id,
-        timeout=request.timeout,
-        working_directory=request.working_directory,
-        allowed_tools=request.allowed_tools,
-    )
+    try:
+        task_id = worker_pool.submit(
+            prompt=prompt,
+            model=request.model,
+            project_id=project_id,
+            timeout=request.timeout,
+            working_directory=request.working_directory,
+            allowed_tools=request.allowed_tools,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     # Wait for result (run in executor to avoid blocking event loop)
     loop = asyncio.get_event_loop()
@@ -287,9 +290,12 @@ async def batch_processing(
     # Submit all tasks
     task_ids = []
     for batch_item in request.prompts:
-        task_id = worker_pool.submit(
-            prompt=batch_item.prompt, model=model, project_id=project_id, timeout=request.timeout
-        )
+        try:
+            task_id = worker_pool.submit(
+                prompt=batch_item.prompt, model=model, project_id=project_id, timeout=request.timeout
+            )
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e))
         task_ids.append((task_id, batch_item))
 
     # Wait for all results
@@ -590,9 +596,12 @@ async def process_ai_services_compatible(
     # CLI path (opt-in via use_cli: true) — full Claude Code features, 3-8s cold start
     timeout = max(30, (request.max_tokens or 1000) / 10)
     t_submit = time.monotonic()
-    task_id = worker_pool.submit(
-        prompt=prompt, model=claude_model, project_id=request.project_id, timeout=timeout
-    )
+    try:
+        task_id = worker_pool.submit(
+            prompt=prompt, model=claude_model, project_id=request.project_id, timeout=timeout
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     # Run blocking get_result in thread pool to avoid blocking the event loop
     loop = asyncio.get_event_loop()

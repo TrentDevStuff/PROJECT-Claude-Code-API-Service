@@ -195,14 +195,10 @@ async def health():
 
     # Worker pool
     if worker_pool and worker_pool.running:
+        pool_health = worker_pool.health_status()
         svc["worker_pool"] = ServiceHealth(
-            status="ok",
-            detail={
-                "running": worker_pool.running,
-                "active_workers": worker_pool.active_workers,
-                "max_workers": worker_pool.max_workers,
-                "queued_tasks": worker_pool.task_queue.qsize(),
-            },
+            status=pool_health["status"],
+            detail=pool_health,
         )
     else:
         svc["worker_pool"] = ServiceHealth(status="unavailable")

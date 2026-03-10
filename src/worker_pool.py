@@ -12,6 +12,7 @@ Manages a pool of Claude CLI subprocess workers with:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -22,7 +23,9 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
+
+logger = logging.getLogger(__name__)
 
 
 class TaskStatus(Enum):
@@ -90,6 +93,9 @@ class WorkerPool:
         "opus": {"input": 15.00, "output": 75.00},
     }
 
+    # Max queued tasks before rejecting new submissions (per-worker multiplier)
+    QUEUE_CAPACITY_PER_WORKER = 10
+
     def __init__(self, max_workers: int = 5, mcp_config: str = ""):
         """
         Initialize the worker pool.
@@ -100,8 +106,9 @@ class WorkerPool:
         """
         self.max_workers = max_workers
         self.mcp_config = mcp_config
+        self._max_queue = max_workers * self.QUEUE_CAPACITY_PER_WORKER
         self.tasks: dict[str, Task] = {}
-        self.task_queue: Queue = Queue()
+        self.task_queue: Queue = Queue(maxsize=self._max_queue)
         self.active_workers = 0
         self.lock = threading.Lock()
         self.monitor_thread = None
@@ -226,12 +233,19 @@ class WorkerPool:
         )
 
         with self.lock:
-            self.tasks[task_id] = task
             # Start immediately if capacity exists, otherwise queue
             if self.active_workers < self.max_workers:
+                self.tasks[task_id] = task
                 self._start_task_locked(task_id)
             else:
-                self.task_queue.put(task_id)
+                try:
+                    self.task_queue.put_nowait(task_id)
+                    self.tasks[task_id] = task
+                except Full:
+                    raise RuntimeError(
+                        f"Worker pool overloaded: {self.active_workers} active workers, "
+                        f"{self.task_queue.qsize()} queued tasks. Try again later."
+                    )
 
         # Ensure monitor is running
         if not self.running:
@@ -349,20 +363,29 @@ class WorkerPool:
 
     def _monitor_loop(self):
         """Main monitoring loop - processes queue and checks worker status."""
+        cleanup_counter = 0
         while self.running:
-            # Process queue if we have capacity
-            with self.lock:
-                can_start = self.active_workers < self.max_workers
-
-            if can_start:
-                try:
-                    task_id = self.task_queue.get(timeout=0.5)
-                    self._start_task(task_id)
-                except Empty:
-                    pass
-
-            # Check for completed tasks
+            # Check for completed/timed-out tasks first (frees workers)
             self._check_completed_tasks()
+
+            # Drain queue up to available capacity
+            with self.lock:
+                slots = self.max_workers - self.active_workers
+
+            started = 0
+            while started < slots:
+                try:
+                    task_id = self.task_queue.get_nowait()
+                    self._start_task(task_id)
+                    started += 1
+                except Empty:
+                    break
+
+            # Periodic stale task cleanup (every ~5 seconds)
+            cleanup_counter += 1
+            if cleanup_counter >= 500:
+                cleanup_counter = 0
+                self._cleanup_stale_tasks()
 
             time.sleep(0.01)
 
@@ -591,3 +614,43 @@ class WorkerPool:
         output_cost = (output_tokens / 1_000_000) * rates["output"]
 
         return input_cost + output_cost
+
+    def _cleanup_stale_tasks(self):
+        """Remove finished tasks older than 5 minutes from the tasks dict."""
+        cutoff = time.time() - 300
+        with self.lock:
+            stale = [
+                tid for tid, t in self.tasks.items()
+                if t.done_event.is_set() and t.start_time and t.start_time < cutoff
+            ]
+            for tid in stale:
+                self._cleanup_task(self.tasks[tid])
+                del self.tasks[tid]
+            if stale:
+                logger.info("Cleaned up %d stale tasks", len(stale))
+
+    def health_status(self) -> dict:
+        """
+        Return pool health for the /health endpoint.
+
+        Returns dict with status: ok | degraded | overloaded
+        """
+        with self.lock:
+            active = self.active_workers
+            queued = self.task_queue.qsize()
+            max_q = self._max_queue
+
+        if queued >= max_q:
+            status = "overloaded"
+        elif queued > self.max_workers * 2:
+            status = "degraded"
+        else:
+            status = "ok"
+
+        return {
+            "status": status,
+            "active_workers": active,
+            "max_workers": self.max_workers,
+            "queued_tasks": queued,
+            "max_queue": max_q,
+        }
