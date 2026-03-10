@@ -280,6 +280,11 @@ class WorkerPool:
         # Timeout - kill the task and capture any partial output
         with self.lock:
             task = self.tasks[task_id]
+
+            # If monitor already handled this task, just return
+            if task.result:
+                return task.result
+
             stderr_capture = ""
             stdout_capture = ""
             if task.process and task.process.poll() is None:
@@ -292,7 +297,8 @@ class WorkerPool:
                     task.process.kill()
                 except Exception:
                     pass
-                task.status = TaskStatus.TIMEOUT
+
+            task.status = TaskStatus.TIMEOUT
 
             # Also check debug log if it exists
             debug_log = ""
@@ -315,6 +321,8 @@ class WorkerPool:
                 error=error_msg,
             )
             task.done_event.set()
+            self.active_workers = max(0, self.active_workers - 1)
+            self._cleanup_task(task)
 
         return task.result
 
@@ -616,7 +624,7 @@ class WorkerPool:
         return input_cost + output_cost
 
     def _cleanup_stale_tasks(self):
-        """Remove finished tasks older than 5 minutes from the tasks dict."""
+        """Remove finished tasks older than 5 minutes and reconcile worker count."""
         cutoff = time.time() - 300
         with self.lock:
             stale = [
@@ -628,6 +636,18 @@ class WorkerPool:
                 del self.tasks[tid]
             if stale:
                 logger.info("Cleaned up %d stale tasks", len(stale))
+
+            # Reconcile active_workers with actual running processes
+            actual_running = sum(
+                1 for t in self.tasks.values()
+                if t.status == TaskStatus.RUNNING and t.process and t.process.poll() is None
+            )
+            if self.active_workers != actual_running:
+                logger.warning(
+                    "Worker count drift: tracked=%d actual=%d, correcting",
+                    self.active_workers, actual_running,
+                )
+                self.active_workers = actual_running
 
     def health_status(self) -> dict:
         """
