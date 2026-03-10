@@ -572,6 +572,11 @@ class WorkerPool:
                 task.done_event.set()
 
             except json.JSONDecodeError as e:
+                logger.error(
+                    "Task %s JSON parse error: %s stdout=%s stderr=%s",
+                    task_id[:8], e, stdout[:200] if stdout else "(empty)",
+                    stderr[:200] if stderr else "(empty)",
+                )
                 task.status = TaskStatus.FAILED
                 task.result = TaskResult(
                     task_id=task_id,
@@ -581,11 +586,16 @@ class WorkerPool:
                 task.done_event.set()
 
         else:
+            error_msg = f"Process exited with code {returncode}\nStderr: {stderr}"
+            logger.error(
+                "Task %s failed: exit_code=%d stderr=%s",
+                task_id[:8], returncode, stderr[:500] if stderr else "(empty)",
+            )
             task.status = TaskStatus.FAILED
             task.result = TaskResult(
                 task_id=task_id,
                 status=TaskStatus.FAILED,
-                error=f"Process exited with code {returncode}\nStderr: {stderr}",
+                error=error_msg,
             )
             task.done_event.set()
 
