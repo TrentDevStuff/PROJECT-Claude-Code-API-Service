@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     shutdown_timeout: int = 30
     mcp_config: str = ""  # Path to MCP server config JSON (passed to claude --mcp-config)
 
+    # SDK retry and circuit breaker
+    sdk_max_retries: int = 4
+    sdk_timeout_seconds: float = 60.0
+    circuit_breaker_threshold: int = 5
+    circuit_breaker_recovery_seconds: float = 30.0
+
     model_config = SettingsConfigDict(env_prefix="CLAUDE_API_")
 
 

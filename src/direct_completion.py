@@ -14,7 +14,9 @@ import logging
 import time
 
 import anthropic
+import httpx
 
+from src.settings import settings
 from src.worker_pool import TaskResult, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -45,8 +47,15 @@ class DirectCompletionClient:
 
     def __init__(self):
         """Initialize with Anthropic SDK client. Reads ANTHROPIC_API_KEY from env."""
-        self.client = anthropic.Anthropic()
-        logger.info("Direct completion client initialized")
+        self.client = anthropic.Anthropic(
+            max_retries=settings.sdk_max_retries,
+            timeout=httpx.Timeout(settings.sdk_timeout_seconds, connect=10.0),
+        )
+        logger.info(
+            "Direct completion client initialized (max_retries=%d, timeout=%.0fs)",
+            settings.sdk_max_retries,
+            settings.sdk_timeout_seconds,
+        )
 
     def complete(
         self,
@@ -146,12 +155,95 @@ class DirectCompletionClient:
                 cost=cost,
             )
 
+        except anthropic.RateLimitError as e:
+            retry_after = None
+            if hasattr(e, "response") and e.response is not None:
+                ra_val = e.response.headers.get("retry-after")
+                if ra_val:
+                    try:
+                        retry_after = float(ra_val)
+                    except (ValueError, TypeError):
+                        pass
+            logger.warning(
+                "Anthropic rate limit hit",
+                extra={"error_category": "rate_limited", "upstream_status": 429, "model": model_id},
+            )
+            return TaskResult(
+                task_id="sdk-direct",
+                status=TaskStatus.FAILED,
+                error=f"Rate limited by Anthropic API: {e}",
+                error_category="rate_limited",
+                upstream_status=429,
+                retry_after=retry_after,
+            )
+        except anthropic.InternalServerError as e:
+            status_code = getattr(e, "status_code", 500)
+            category = "overloaded" if status_code == 529 else "upstream_error"
+            logger.warning(
+                "Anthropic server error (%d)",
+                status_code,
+                extra={"error_category": category, "upstream_status": status_code, "model": model_id},
+            )
+            return TaskResult(
+                task_id="sdk-direct",
+                status=TaskStatus.FAILED,
+                error=f"Anthropic server error ({status_code}): {e}",
+                error_category=category,
+                upstream_status=status_code,
+            )
+        except anthropic.APITimeoutError as e:
+            logger.warning(
+                "Anthropic API timeout",
+                extra={"error_category": "timeout", "model": model_id},
+            )
+            return TaskResult(
+                task_id="sdk-direct",
+                status=TaskStatus.FAILED,
+                error=f"Anthropic API timeout: {e}",
+                error_category="timeout",
+            )
+        except anthropic.APIConnectionError as e:
+            logger.warning(
+                "Anthropic API connection error",
+                extra={"error_category": "connection_error", "model": model_id},
+            )
+            return TaskResult(
+                task_id="sdk-direct",
+                status=TaskStatus.FAILED,
+                error=f"Anthropic API connection error: {e}",
+                error_category="connection_error",
+            )
+        except anthropic.AuthenticationError as e:
+            logger.error(
+                "Anthropic auth error",
+                extra={"error_category": "auth_error", "upstream_status": 401, "model": model_id},
+            )
+            return TaskResult(
+                task_id="sdk-direct",
+                status=TaskStatus.FAILED,
+                error=f"Anthropic auth error: {e}",
+                error_category="auth_error",
+                upstream_status=401,
+            )
+        except anthropic.BadRequestError as e:
+            logger.error(
+                "Bad request to Anthropic API",
+                extra={"error_category": "bad_request", "upstream_status": 400, "model": model_id},
+            )
+            return TaskResult(
+                task_id="sdk-direct",
+                status=TaskStatus.FAILED,
+                error=f"Bad request to Anthropic API: {e}",
+                error_category="bad_request",
+                upstream_status=400,
+            )
         except anthropic.APIError as e:
             logger.error("SDK API error: %s", e)
             return TaskResult(
                 task_id="sdk-direct",
                 status=TaskStatus.FAILED,
                 error=f"Anthropic API error: {e}",
+                error_category="upstream_error",
             )
         except Exception as e:
             logger.error("SDK completion error: %s", e)
@@ -159,4 +251,5 @@ class DirectCompletionClient:
                 task_id="sdk-direct",
                 status=TaskStatus.FAILED,
                 error=f"Direct completion error: {e}",
+                error_category="internal_error",
             )

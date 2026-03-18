@@ -32,6 +32,17 @@ class JSONFormatter(logging.Formatter):
             "max_workers",
             "service",
             "detail",
+            # Error observability
+            "error_category",
+            "upstream_status",
+            "is_retryable",
+            "circuit_state",
+            "retry_count",
+            "task_id",
+            "model",
+            "latency_ms",
+            "input_tokens",
+            "output_tokens",
         ):
             value = getattr(record, key, None)
             if value is not None:

@@ -27,7 +27,54 @@ from src.budget_manager import BudgetManager
 from src.direct_completion import DirectCompletionClient
 from src.model_router import auto_select_model
 from src.permission_manager import PermissionManager
-from src.worker_pool import TaskStatus, WorkerPool
+from src.circuit_breaker import CircuitBreaker
+from src.error_tracker import ErrorTracker
+from src.worker_pool import TaskResult, TaskStatus, WorkerPool
+
+# ============================================================================
+# Error Classification → HTTP Status Mapping
+# ============================================================================
+
+_ERROR_HTTP_MAP = {
+    "rate_limited": 429,
+    "overloaded": 503,
+    "upstream_error": 502,
+    "auth_error": 502,
+    "timeout": 504,
+    "connection_error": 502,
+    "bad_request": 400,
+    "cli_error": 502,
+    "internal_error": 500,
+}
+
+
+def _raise_for_failed_task(result: TaskResult, path: str = "unknown") -> None:
+    """Raise HTTPException with correct status code based on error category."""
+    if result.status == TaskStatus.TIMEOUT:
+        status = 504
+    elif result.error_category:
+        status = _ERROR_HTTP_MAP.get(result.error_category, 500)
+    else:
+        status = 500
+
+    # Record error for observability
+    if error_tracker and result.error_category:
+        error_tracker.record(result.error_category, path=path)
+
+    headers: dict[str, str] = {}
+    if result.retry_after:
+        headers["Retry-After"] = str(int(result.retry_after))
+    if result.error_category:
+        headers["X-Error-Category"] = result.error_category
+    if result.upstream_status:
+        headers["X-Upstream-Status"] = str(result.upstream_status)
+
+    raise HTTPException(
+        status_code=status,
+        detail=result.error or "Unknown error",
+        headers=headers or None,
+    )
+
 
 # ============================================================================
 # Pydantic Models
@@ -160,6 +207,9 @@ worker_pool: WorkerPool | None = None
 budget_manager: BudgetManager | None = None
 permission_manager: PermissionManager | None = None
 sdk_client: DirectCompletionClient | None = None
+sdk_circuit: CircuitBreaker | None = None
+cli_circuit: CircuitBreaker | None = None
+error_tracker: ErrorTracker | None = None
 
 
 def initialize_services(
@@ -167,13 +217,20 @@ def initialize_services(
     budget: BudgetManager,
     permissions: PermissionManager = None,
     direct_sdk: DirectCompletionClient = None,
+    sdk_cb: CircuitBreaker = None,
+    cli_cb: CircuitBreaker = None,
+    tracker: ErrorTracker = None,
 ):
     """Initialize global service instances."""
     global worker_pool, budget_manager, permission_manager, sdk_client
+    global sdk_circuit, cli_circuit, error_tracker
     worker_pool = pool
     budget_manager = budget
     permission_manager = permissions
     sdk_client = direct_sdk
+    sdk_circuit = sdk_cb
+    cli_circuit = cli_cb
+    error_tracker = tracker
 
 
 # ============================================================================
@@ -241,7 +298,7 @@ async def chat_completion(
 
     # Handle errors
     if result.status != TaskStatus.COMPLETED:
-        raise HTTPException(status_code=500, detail=f"Task failed: {result.error}")
+        _raise_for_failed_task(result, path="cli")
 
     # Track usage
     await budget_manager.track_usage(
@@ -562,6 +619,13 @@ async def process_ai_services_compatible(
 
     if not use_cli:
         # SDK path (default) — fast, simple completions via Anthropic API
+        if sdk_circuit and not sdk_circuit.allow_request():
+            raise HTTPException(
+                status_code=503,
+                detail="Upstream API circuit breaker open — too many recent failures",
+                headers={"Retry-After": str(int(sdk_circuit.recovery_timeout))},
+            )
+
         t_sdk_start = time.monotonic()
         sdk_messages = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages]
         loop = asyncio.get_event_loop()
@@ -574,8 +638,13 @@ async def process_ai_services_compatible(
             extra={"overhead_ms": round((t_sdk_done - t_sdk_start) * 1000, 1)},
         )
 
-        if result.status != TaskStatus.COMPLETED:
-            raise HTTPException(500, f"SDK completion failed: {result.error}")
+        if result.status == TaskStatus.COMPLETED:
+            if sdk_circuit:
+                sdk_circuit.record_success()
+        else:
+            if sdk_circuit:
+                sdk_circuit.record_failure(result.error_category)
+            _raise_for_failed_task(result, path="sdk")
 
         if result.usage:
             await budget_manager.track_usage(
@@ -594,6 +663,13 @@ async def process_ai_services_compatible(
         )
 
     # CLI path (opt-in via use_cli: true) — full Claude Code features, 3-8s cold start
+    if cli_circuit and not cli_circuit.allow_request():
+        raise HTTPException(
+            status_code=503,
+            detail="CLI circuit breaker open — too many recent failures",
+            headers={"Retry-After": str(int(cli_circuit.recovery_timeout))},
+        )
+
     timeout = max(30, (request.max_tokens or 1000) / 10)
     t_submit = time.monotonic()
     try:
@@ -613,11 +689,13 @@ async def process_ai_services_compatible(
     )
 
     # Check for non-success status
-    if result.status != TaskStatus.COMPLETED:
-        raise HTTPException(
-            504 if result.status == TaskStatus.TIMEOUT else 500,
-            f"Task {result.status.value}: {result.error or 'Unknown error'}",
-        )
+    if result.status == TaskStatus.COMPLETED:
+        if cli_circuit:
+            cli_circuit.record_success()
+    else:
+        if cli_circuit:
+            cli_circuit.record_failure(result.error_category)
+        _raise_for_failed_task(result, path="cli")
 
     # Track usage
     if result.usage:

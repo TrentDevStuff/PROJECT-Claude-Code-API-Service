@@ -28,7 +28,9 @@ from src.middleware import RequestIDMiddleware
 from src.permission_manager import PermissionManager
 from src.settings import settings
 from src.websocket import _streamer, initialize_websocket, websocket_endpoint
+from src.circuit_breaker import CircuitBreaker
 from src.direct_completion import DirectCompletionClient
+from src.error_tracker import ErrorTracker
 from src.worker_pool import WorkerPool
 
 # Configure logging early (before anything else logs)
@@ -43,6 +45,9 @@ permission_manager: PermissionManager | None = None
 audit_logger: AuditLogger | None = None
 cache: RedisCache | None = None
 sdk_client: DirectCompletionClient | None = None
+sdk_circuit_breaker: CircuitBreaker | None = None
+cli_circuit_breaker: CircuitBreaker | None = None
+error_tracker_instance: ErrorTracker | None = None
 
 # Lifecycle flags
 _start_time: float | None = None
@@ -56,7 +61,8 @@ async def lifespan(app: FastAPI):
     Initializes and cleans up all services with graceful shutdown.
     """
     global worker_pool, budget_manager, auth_manager, permission_manager
-    global audit_logger, cache, sdk_client, _start_time, _shutting_down
+    global audit_logger, cache, sdk_client, sdk_circuit_breaker, cli_circuit_breaker
+    global error_tracker_instance, _start_time, _shutting_down
 
     _start_time = time.time()
     _shutting_down = False
@@ -86,8 +92,27 @@ async def lifespan(app: FastAPI):
         logger.warning("SDK client unavailable (CLI path still works): %s", e)
         sdk_client = None
 
+    # Initialize circuit breakers
+    sdk_circuit_breaker = CircuitBreaker(
+        failure_threshold=settings.circuit_breaker_threshold,
+        recovery_timeout=settings.circuit_breaker_recovery_seconds,
+        name="sdk",
+    )
+    cli_circuit_breaker = CircuitBreaker(
+        failure_threshold=settings.circuit_breaker_threshold,
+        recovery_timeout=settings.circuit_breaker_recovery_seconds,
+        name="cli",
+    )
+
+    # Initialize error tracker
+    error_tracker_instance = ErrorTracker(window_seconds=300.0)
+
     # Initialize API services
-    initialize_services(worker_pool, budget_manager, permission_manager, sdk_client)
+    initialize_services(
+        worker_pool, budget_manager, permission_manager, sdk_client,
+        sdk_cb=sdk_circuit_breaker, cli_cb=cli_circuit_breaker,
+        tracker=error_tracker_instance,
+    )
     initialize_auth(auth_manager)
 
     # Initialize WebSocket service
@@ -220,6 +245,26 @@ async def health():
     # Budget / Auth managers
     svc["budget_manager"] = ServiceHealth(status="ok" if budget_manager else "unavailable")
     svc["auth_manager"] = ServiceHealth(status="ok" if auth_manager else "unavailable")
+
+    # Error tracker
+    if error_tracker_instance:
+        total_errs = error_tracker_instance.total_errors()
+        svc["error_rates"] = ServiceHealth(
+            status="ok" if total_errs < 50 else "degraded",
+            detail=error_tracker_instance.summary(),
+        )
+
+    # Circuit breakers
+    if sdk_circuit_breaker:
+        svc["sdk_circuit_breaker"] = ServiceHealth(
+            status="ok" if sdk_circuit_breaker.state == "closed" else "degraded",
+            detail=sdk_circuit_breaker.status(),
+        )
+    if cli_circuit_breaker:
+        svc["cli_circuit_breaker"] = ServiceHealth(
+            status="ok" if cli_circuit_breaker.state == "closed" else "degraded",
+            detail=cli_circuit_breaker.status(),
+        )
 
     overall = "ok" if all(s.status == "ok" for s in svc.values()) else "degraded"
     uptime = round(time.time() - _start_time, 1) if _start_time else None

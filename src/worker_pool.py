@@ -49,6 +49,9 @@ class TaskResult:
     usage: dict[str, int] | None = None
     cost: float | None = None
     error: str | None = None
+    error_category: str | None = None
+    upstream_status: int | None = None
+    retry_after: float | None = None
 
 
 @dataclass
@@ -72,6 +75,22 @@ class Task:
     def __post_init__(self):
         if self.done_event is None:
             self.done_event = threading.Event()
+
+
+def _classify_cli_stderr(stderr: str) -> str:
+    """Classify CLI subprocess error by scanning stderr for known patterns."""
+    lower = stderr.lower()
+    if "rate limit" in lower or "429" in lower:
+        return "rate_limited"
+    if "overloaded" in lower or "529" in lower:
+        return "overloaded"
+    if "timed out" in lower or "timeout" in lower:
+        return "timeout"
+    if "server error" in lower or " 500 " in lower or "internal server error" in lower:
+        return "upstream_error"
+    if "authentication" in lower or "unauthorized" in lower or "401" in lower:
+        return "auth_error"
+    return "cli_error"
 
 
 class WorkerPool:
@@ -587,15 +606,21 @@ class WorkerPool:
 
         else:
             error_msg = f"Process exited with code {returncode}\nStderr: {stderr}"
+
+            # Classify CLI error by scanning stderr for known patterns
+            error_category = _classify_cli_stderr(stderr)
+
             logger.error(
-                "Task %s failed: exit_code=%d stderr=%s",
-                task_id[:8], returncode, stderr[:500] if stderr else "(empty)",
+                "Task %s failed: exit_code=%d error_category=%s stderr=%s",
+                task_id[:8], returncode, error_category,
+                stderr[:500] if stderr else "(empty)",
             )
             task.status = TaskStatus.FAILED
             task.result = TaskResult(
                 task_id=task_id,
                 status=TaskStatus.FAILED,
                 error=error_msg,
+                error_category=error_category,
             )
             task.done_event.set()
 
