@@ -167,7 +167,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Request ID middleware (must be added before CORS so it wraps all requests)
+# Request ID middleware (pure ASGI — wraps all requests including CORS)
 app.add_middleware(RequestIDMiddleware)
 
 # Enable CORS for web clients
@@ -333,4 +333,8 @@ async def stream(websocket: WebSocket):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=settings.port)
+    # Force asyncio event loop — uvloop's idle callback deadlocks when the
+    # WorkerPool monitor thread contends for the GIL via threading.Lock.
+    # See process sample: main thread stuck in lock_PyThread_acquire_lock
+    # inside uv__run_idle → _on_idle → task_step → PyObject_GetAttr.
+    uvicorn.run(app, host="0.0.0.0", port=settings.port, loop="asyncio")

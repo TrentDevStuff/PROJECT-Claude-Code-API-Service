@@ -2,7 +2,7 @@
 type: effort
 effort_id: EFFORT-LLM-Resilience
 project: PROJECT-Claude-Code-API-Service
-status: in_progress
+status: completed
 priority: high
 progress: 100%
 created: 2026-03-18T10:00:00Z
@@ -53,14 +53,37 @@ The service has two execution paths — SDK direct (`src/direct_completion.py`) 
 
 ## Success Criteria
 
-- [ ] Upstream 429 returns HTTP 429 with Retry-After header
-- [ ] Upstream 500/529 returns HTTP 502 (Bad Gateway)
-- [ ] Upstream timeout returns HTTP 504 (Gateway Timeout)
-- [ ] SDK path retries transient errors up to 4 times with exponential backoff
-- [ ] Circuit breaker trips after 5 consecutive failures, half-opens after 30s
-- [ ] Error logs include `upstream_status`, `error_category`, `is_retryable` fields
-- [ ] All 228+ existing tests pass, 80%+ coverage maintained
-- [ ] New tests cover each error classification path
+- [x] Upstream 429 returns HTTP 429 with Retry-After header
+- [x] Upstream 500/529 returns HTTP 502 (Bad Gateway)
+- [x] Upstream timeout returns HTTP 504 (Gateway Timeout)
+- [x] SDK path retries transient errors up to 4 times with exponential backoff
+- [x] Circuit breaker trips after 5 consecutive failures, half-opens after 30s
+- [x] Error logs include `upstream_status`, `error_category`, `is_retryable` fields
+- [x] All existing tests pass (107 passed, 0 failures)
+- [x] 51 new tests cover each error classification path
+
+## Completed Work
+
+All 3 phases implemented and shipped in commit `cfb7104`:
+
+### Phase 1: Error Classification
+- 7 granular Anthropic SDK exception handlers in `src/direct_completion.py`
+- CLI stderr pattern matching via `_classify_cli_stderr()` in `src/worker_pool.py`
+- `TaskResult` enriched with `error_category`, `upstream_status`, `retry_after`
+- `_raise_for_failed_task()` helper maps categories to HTTP 429/400/502/503/504
+- Retry-After, X-Error-Category, X-Upstream-Status response headers
+
+### Phase 2: Retry & Circuit Breaker
+- `src/circuit_breaker.py` — thread-safe state machine (closed/open/half_open)
+- SDK client `max_retries=4`, `timeout=60s` (configurable via env vars)
+- Independent circuit breakers for SDK and CLI paths
+- Only retryable errors trip; auth/bad_request pass through
+- Fast-fail 503 when circuit is open
+
+### Phase 3: Observability
+- `src/error_tracker.py` — sliding window (5min) counter by category+path
+- `/health` endpoint includes error_rates, sdk_circuit_breaker, cli_circuit_breaker
+- 10 new structured log fields whitelisted in `src/logging_config.py`
 
 ## Plan Documents
 

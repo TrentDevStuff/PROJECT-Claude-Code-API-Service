@@ -408,13 +408,16 @@ class WorkerPool:
                 except Empty:
                     break
 
-            # Periodic stale task cleanup (every ~5 seconds)
+            # Periodic stale task cleanup (every ~50 iterations ≈ 25 seconds)
             cleanup_counter += 1
-            if cleanup_counter >= 500:
+            if cleanup_counter >= 50:
                 cleanup_counter = 0
                 self._cleanup_stale_tasks()
 
-            time.sleep(0.01)
+            # 500ms sleep reduces GIL contention from 100 Hz to 2 Hz.
+            # Task completion is signaled via threading.Event (no polling
+            # needed), so this loop only handles queue draining and cleanup.
+            time.sleep(0.5)
 
     def _start_task(self, task_id: str):
         """Start executing a task (acquires lock)."""
