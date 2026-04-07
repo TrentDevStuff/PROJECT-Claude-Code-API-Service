@@ -46,6 +46,8 @@ class TaskResult:
     task_id: str
     status: TaskStatus
     completion: str | None = None
+    content_blocks: list[dict] | None = None
+    stop_reason: str | None = None
     usage: dict[str, int] | None = None
     cost: float | None = None
     error: str | None = None

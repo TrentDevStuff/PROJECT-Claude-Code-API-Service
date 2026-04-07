@@ -34,7 +34,7 @@ class Message(BaseModel):
 
     id: str | None = None
     role: MessageRole
-    content: str
+    content: str | list[dict] = ""
     created_at: str | None = None
     metadata: dict[str, Any] | None = None
     tool_call_id: str | None = None
@@ -71,8 +71,8 @@ class ProcessRequest(BaseModel):
     )
 
     # Features (unsupported - will be ignored with warning)
-    tools: list[dict] | None = Field(None, description="Tool calling (not supported)")
-    tool_choice: str | None = Field(None, description="Tool selection (not supported)")
+    tools: list[dict] | None = Field(None, description="Tool definitions for tool calling")
+    tool_choice: str | dict | None = Field(None, description="Tool selection preference")
     output_schema: dict | None = Field(None, description="Structured outputs (not supported)")
     media_content: list[dict] | None = Field(None, description="Multimodal content (not supported)")
     memory: dict | None = Field(None, description="Memory management (not supported)")
@@ -94,7 +94,8 @@ class AIServiceResponse(BaseModel):
     Mirrors production ai-services response structure.
     """
 
-    content: str = Field(..., description="Response content")
+    content: str = Field("", description="Response content (text, backward compat)")
+    content_blocks: list[dict] | None = Field(None, description="Structured content blocks (tool_use, text, etc.)")
     model: str = Field(..., description="Model used")
     provider: str = Field("claudecode", description="Provider name")
     metadata: dict[str, Any] = Field(..., description="Response metadata")
@@ -159,7 +160,15 @@ def convert_to_messages(request: ProcessRequest) -> list[dict[str, str]]:
     """
     # If messages provided, use them
     if request.messages:
-        return [{"role": msg.role.value, "content": msg.content} for msg in request.messages]
+        result = []
+        for msg in request.messages:
+            m: dict[str, Any] = {"role": msg.role.value, "content": msg.content}
+            if msg.tool_calls:
+                m["tool_calls"] = msg.tool_calls
+            if msg.tool_call_id:
+                m["tool_call_id"] = msg.tool_call_id
+            result.append(m)
+        return result
 
     # Build from legacy fields
     messages = []
@@ -200,16 +209,28 @@ def convert_response(
     Returns:
         AI services compatible response
     """
+    raw_content = claude_response.get("content", "")
+    stop_reason = claude_response.get("stop_reason", "stop")
+
+    content_blocks = None
+    if isinstance(raw_content, list):
+        content_blocks = raw_content
+        text_parts = [b.get("text", "") for b in raw_content if isinstance(b, dict) and b.get("type") == "text"]
+        content_str = "".join(text_parts)
+    else:
+        content_str = str(raw_content)
+
     return AIServiceResponse(
-        content=claude_response.get("content", ""),
-        model=original_model,  # Return what they requested
+        content=content_str,
+        content_blocks=content_blocks,
+        model=original_model,
         provider=original_provider,
         metadata={
-            "actual_model": claude_model,  # What we actually used
+            "actual_model": claude_model,
             "usage": claude_response.get("usage", {}),
             "cost_usd": claude_response.get("cost", 0),
-            "processing_time": 0,  # TODO: Track this
-            "finish_reason": "stop",
+            "processing_time": 0,
+            "finish_reason": stop_reason,
             "mapped_from": f"{original_provider}:{original_model} → claudecode:{claude_model}",
         },
     )

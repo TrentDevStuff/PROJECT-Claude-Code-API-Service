@@ -29,6 +29,7 @@ from src.model_router import auto_select_model
 from src.permission_manager import PermissionManager
 from src.circuit_breaker import CircuitBreaker
 from src.error_tracker import ErrorTracker
+from src.settings import settings
 from src.worker_pool import TaskResult, TaskStatus, WorkerPool
 
 # ============================================================================
@@ -84,14 +85,16 @@ def _raise_for_failed_task(result: TaskResult, path: str = "unknown") -> None:
 class Message(BaseModel):
     """Single message in a conversation."""
 
-    role: str = Field(..., description="Role: 'user', 'assistant', or 'system'")
-    content: str = Field(..., description="Message content")
+    role: str = Field(..., description="Role: 'user', 'assistant', 'system', or 'tool'")
+    content: str | list[dict] | None = Field("", description="Message content (str or content blocks)")
+    tool_call_id: str | None = Field(None, description="Tool call ID (for role=tool messages)")
+    tool_calls: list[dict] | None = Field(None, description="Tool calls (for assistant messages)")
 
 
 class ChatCompletionRequest(BaseModel):
     """Request model for chat completions."""
 
-    messages: list[Message] = Field(..., description="Conversation messages")
+    messages: list[Message] | list[dict[str, Any]] = Field(..., description="Conversation messages")
     model: str | None = Field(
         None, description="Model to use (haiku, sonnet, opus). If not provided, auto-selected."
     )
@@ -103,6 +106,8 @@ class ChatCompletionRequest(BaseModel):
     allowed_tools: list[str] | None = Field(
         None, description="Tools to enable via --allowedTools (e.g. Read, Write, Bash, mcp__local-mcp)"
     )
+    tools: list[dict] | None = Field(None, description="Tool definitions for SDK path (OpenAI format)")
+    tool_choice: str | dict | None = Field(None, description="Tool selection preference")
 
 
 class Usage(BaseModel):
@@ -238,38 +243,54 @@ def initialize_services(
 # ============================================================================
 
 
-@router.post("/chat/completions", response_model=ChatCompletionResponse)
+@router.post("/chat/completions")
 async def chat_completion(
     request: ChatCompletionRequest, project_id: str = Depends(verify_api_key)
-) -> ChatCompletionResponse:
+):
     """
-    Generate a chat completion using Claude CLI.
+    Generate a chat completion.
 
-    - Requires valid API key via Bearer token
-    - Uses WorkerPool for process management
-    - Auto-selects model if not specified
-    - Tracks usage in BudgetManager
-    - Returns completion + usage statistics
+    Routes to SDK path (DirectCompletionClient) when tools are present and
+    TOOL_PASSTHROUGH_ENABLED=true, otherwise to CLI path (WorkerPool).
     """
+    if request.tools and settings.tool_passthrough_enabled:
+        return await _chat_completion_with_tools(request, project_id)
+    return await _chat_completion_cli(request, project_id)
+
+
+async def _chat_completion_cli(
+    request: ChatCompletionRequest, project_id: str
+) -> ChatCompletionResponse:
+    """Existing CLI-path handler. Messages flattened to strings, WorkerPool execution."""
     if worker_pool is None or budget_manager is None:
         raise HTTPException(status_code=500, detail="Services not initialized")
 
-    # Combine messages into a single prompt
-    prompt = "\n\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
+    # Extract text content from messages (handles both Message objects and dicts)
+    def _msg_text(msg):
+        if isinstance(msg, dict):
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+        else:
+            role = msg.role
+            content = msg.content
+        if isinstance(content, list):
+            content = " ".join(
+                b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+            )
+        return f"{role}: {content}"
+
+    prompt = "\n\n".join(_msg_text(msg) for msg in request.messages)
 
     # Auto-select model if not provided
     if request.model is None:
-        # Get budget remaining
         usage_stats = await budget_manager.get_usage(project_id, period="month")
         budget_remaining = usage_stats.get("remaining") or float("inf")
-
         context_size = request.max_tokens or len(prompt.split())
         request.model = auto_select_model(prompt, context_size, budget_remaining)
 
     # Check budget before proceeding
-    estimated_tokens = len(prompt.split()) * 2  # Rough estimate
+    estimated_tokens = len(prompt.split()) * 2
     budget_ok = await budget_manager.check_budget(project_id, estimated_tokens)
-
     if not budget_ok:
         raise HTTPException(status_code=429, detail=f"Budget exceeded for project {project_id}")
 
@@ -296,11 +317,9 @@ async def chat_completion(
         extra={"task_id": task_id, "overhead_ms": round((t_done - t_submit) * 1000, 1)},
     )
 
-    # Handle errors
     if result.status != TaskStatus.COMPLETED:
         _raise_for_failed_task(result, path="cli")
 
-    # Track usage
     await budget_manager.track_usage(
         project_id=project_id,
         model=request.model,
@@ -316,6 +335,96 @@ async def chat_completion(
         cost=result.cost,
         project_id=project_id,
     )
+
+
+async def _chat_completion_with_tools(
+    request: ChatCompletionRequest, project_id: str
+):
+    """SDK-path handler for tool-bearing requests. Translates OpenAI ↔ Anthropic."""
+    from fastapi.responses import JSONResponse
+    from src.tool_translation import (
+        anthropic_result_to_openai_response,
+        openai_messages_to_anthropic,
+        openai_tool_choice_to_anthropic,
+        openai_tools_to_anthropic,
+    )
+
+    if sdk_client is None:
+        raise HTTPException(status_code=500, detail="SDK client not initialized")
+    if budget_manager is None:
+        raise HTTPException(status_code=500, detail="Budget manager not initialized")
+
+    # Translate OpenAI → Anthropic
+    anthropic_tools = openai_tools_to_anthropic(request.tools)
+
+    # Convert messages to dicts if they're Message objects
+    raw_messages = []
+    for msg in request.messages:
+        if isinstance(msg, dict):
+            raw_messages.append(msg)
+        else:
+            m: dict[str, Any] = {"role": msg.role, "content": msg.content}
+            if msg.tool_calls:
+                m["tool_calls"] = msg.tool_calls
+            if msg.tool_call_id:
+                m["tool_call_id"] = msg.tool_call_id
+            raw_messages.append(m)
+
+    anthropic_messages, system = openai_messages_to_anthropic(raw_messages)
+    anthropic_tool_choice = openai_tool_choice_to_anthropic(request.tool_choice)
+
+    # Auto-select model if not provided
+    model = request.model
+    if model is None:
+        usage_stats = await budget_manager.get_usage(project_id, period="month")
+        budget_remaining = usage_stats.get("remaining") or float("inf")
+        prompt_text = str(raw_messages)
+        context_size = request.max_tokens or len(prompt_text.split())
+        model = auto_select_model(prompt_text, context_size, budget_remaining)
+
+    # Check budget
+    estimated_tokens = sum(len(str(m.get("content", "")).split()) for m in raw_messages) * 2
+    budget_ok = await budget_manager.check_budget(project_id, estimated_tokens)
+    if not budget_ok:
+        raise HTTPException(status_code=429, detail=f"Budget exceeded for project {project_id}")
+
+    # Execute via DirectCompletionClient
+    loop = asyncio.get_event_loop()
+    t_start = time.monotonic()
+
+    result = await loop.run_in_executor(
+        None,
+        lambda: sdk_client.complete(
+            messages=anthropic_messages,
+            model=model,
+            max_tokens=request.max_tokens or 4096,
+            system=system,
+            tools=anthropic_tools,
+            tool_choice=anthropic_tool_choice,
+        ),
+    )
+
+    t_done = time.monotonic()
+    logger.info(
+        "chat_completion_tools_latency",
+        extra={"task_id": result.task_id, "latency_ms": round((t_done - t_start) * 1000, 1)},
+    )
+
+    if result.status != TaskStatus.COMPLETED:
+        _raise_for_failed_task(result, path="sdk")
+
+    # Track usage
+    if result.usage:
+        await budget_manager.track_usage(
+            project_id=project_id,
+            model=model,
+            tokens=result.usage.get("total_tokens", 0),
+            cost=result.cost or 0,
+        )
+
+    # Translate Anthropic → OpenAI response
+    openai_response = anthropic_result_to_openai_response(result, model, project_id)
+    return JSONResponse(content=openai_response)
 
 
 @router.post("/batch", response_model=BatchResponse)
@@ -569,7 +678,7 @@ async def process_ai_services_compatible(
 
     # Check unsupported features
     unsupported_features = []
-    if request.tools:
+    if request.tools and not settings.tool_passthrough_enabled:
         unsupported_features.append("tools")
     if request.output_schema:
         unsupported_features.append("structured_outputs")
@@ -628,9 +737,25 @@ async def process_ai_services_compatible(
 
         t_sdk_start = time.monotonic()
         sdk_messages = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages]
+
+        # Extract system message for SDK path
+        system_message = request.system_message
+
+        # Determine tool params (gated behind feature flag)
+        sdk_tools = request.tools if settings.tool_passthrough_enabled else None
+        sdk_tool_choice = request.tool_choice if settings.tool_passthrough_enabled else None
+
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            None, sdk_client.complete, sdk_messages, claude_model, request.max_tokens or 4096
+            None,
+            lambda: sdk_client.complete(
+                messages=sdk_messages,
+                model=claude_model,
+                max_tokens=request.max_tokens or 4096,
+                system=system_message,
+                tools=sdk_tools,
+                tool_choice=sdk_tool_choice,
+            ),
         )
         t_sdk_done = time.monotonic()
         logger.info(
@@ -653,7 +778,8 @@ async def process_ai_services_compatible(
 
         return convert_response(
             claude_response={
-                "content": result.completion or "",
+                "content": result.content_blocks or result.completion or "",
+                "stop_reason": result.stop_reason or "stop",
                 "usage": result.usage,
                 "cost": result.cost,
             },

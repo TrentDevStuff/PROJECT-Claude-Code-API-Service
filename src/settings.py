@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     circuit_breaker_threshold: int = 5
     circuit_breaker_recovery_seconds: float = 30.0
 
+    # Tool calling passthrough (Phase 1)
+    tool_passthrough_enabled: bool = False
+
     model_config = SettingsConfigDict(env_prefix="CLAUDE_API_")
 
 

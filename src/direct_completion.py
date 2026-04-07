@@ -5,7 +5,7 @@ Bypasses the Claude CLI for simple completion requests, eliminating
 3-8 seconds of CLI cold start overhead. Uses the Anthropic Messages API
 directly via the Python SDK.
 
-Only suitable for simple completions without tools/agents/skills.
+Supports tool calling when TOOL_PASSTHROUGH_ENABLED=true.
 """
 
 from __future__ import annotations
@@ -57,22 +57,38 @@ class DirectCompletionClient:
             settings.sdk_timeout_seconds,
         )
 
+    def _validate_tools(self, tools: list[dict]) -> None:
+        """Validate tool definitions at boundary. Log warnings, don't reject."""
+        for i, tool in enumerate(tools):
+            name = tool.get("name", f"tool_{i}")
+            if not tool.get("name"):
+                logger.warning("tool_validation_warning", extra={"tool_index": i, "issue": "missing_name"})
+            if not tool.get("description"):
+                logger.warning("tool_validation_warning", extra={"tool_name": name, "issue": "missing_description"})
+            schema = tool.get("input_schema", {})
+            if schema and schema.get("type") != "object":
+                logger.warning("tool_validation_warning", extra={"tool_name": name, "issue": "input_schema_type_not_object"})
+
     def complete(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict],
         model: str = "sonnet",
         max_tokens: int = 4096,
         system: str | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: dict | None = None,
     ) -> TaskResult:
         """
         Send a completion request directly via the Anthropic Messages API.
 
         Args:
-            messages: List of {"role": "user"|"assistant", "content": "..."} dicts.
+            messages: List of {"role": "...", "content": "..." or [content blocks]} dicts.
                       System messages are extracted and passed separately.
             model: Model short name (haiku/sonnet/opus) or full model ID.
             max_tokens: Maximum tokens to generate.
             system: Optional system prompt.
+            tools: Optional tool definitions in Anthropic format.
+            tool_choice: Optional tool selection preference.
 
         Returns:
             TaskResult compatible with the worker pool interface.
@@ -93,8 +109,9 @@ class DirectCompletionClient:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role == "system":
-                system_parts.append(content)
+                system_parts.append(content if isinstance(content, str) else str(content))
             else:
+                # Preserve structured content (tool_result blocks, etc.)
                 api_messages.append({"role": role, "content": content})
 
         # Ensure at least one user message
@@ -113,14 +130,43 @@ class DirectCompletionClient:
             }
             if system_parts:
                 kwargs["system"] = "\n\n".join(system_parts)
+            if tools:
+                self._validate_tools(tools)
+                kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
 
             response = self.client.messages.create(**kwargs)
 
-            # Extract content
-            completion_text = ""
+            # Extract content — preserve structure for tool calls
+            content_blocks = []
+            has_tool_use = False
+
             for block in response.content:
                 if hasattr(block, "text"):
-                    completion_text += block.text
+                    content_blocks.append({"type": "text", "text": block.text})
+                elif block.type == "tool_use":
+                    has_tool_use = True
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    })
+
+            # Audit log tool calls
+            if has_tool_use:
+                for block in content_blocks:
+                    if block.get("type") == "tool_use":
+                        logger.info(
+                            "tool_call_passthrough",
+                            extra={
+                                "tool_name": block["name"],
+                                "tool_id": block["id"],
+                                "model": model_id,
+                                "input_keys": list(block.get("input", {}).keys()),
+                            },
+                        )
 
             # Extract usage
             input_tokens = response.usage.input_tokens
@@ -140,13 +186,20 @@ class DirectCompletionClient:
                     "latency_ms": round((t_done - t_start) * 1000, 1),
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
+                    "has_tool_use": has_tool_use,
                 },
             )
+
+            # Build result — separate fields for text and structured content
+            text_parts = [b["text"] for b in content_blocks if b.get("type") == "text"]
+            completion_text = "".join(text_parts) if text_parts else None
 
             return TaskResult(
                 task_id="sdk-direct",
                 status=TaskStatus.COMPLETED,
                 completion=completion_text,
+                content_blocks=content_blocks if has_tool_use else None,
+                stop_reason=response.stop_reason,
                 usage={
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
