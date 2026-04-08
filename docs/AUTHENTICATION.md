@@ -16,6 +16,32 @@ Example: `cc_a1b2c3d4e5f6789012345678901234567890abcd`
 
 ## Generating API Keys
 
+### Using CLI (Recommended)
+
+```bash
+# Provision a persistent key for a service (get-or-create)
+claude-api keys provision my-service
+
+# Quiet mode — returns just the key (for scripts and service startup)
+export CLAUDE_API_KEY=$(claude-api keys provision my-service -q)
+
+# Keys are stored at ~/.claude-api/keys/<service-id>.key
+# Subsequent calls return the existing key if still valid
+claude-api keys provision my-service   # Returns same key
+
+# Force create a new key
+claude-api keys provision my-service --force
+
+# Manual key creation (without local persistence)
+claude-api keys create --project-id my-project --profile enterprise
+
+# Manual creation with persistence
+claude-api keys create --project-id my-project --save-as my-project
+
+# View stored keys
+claude-api keys store-list
+```
+
 ### Using Python
 
 ```python
@@ -33,12 +59,6 @@ api_key = auth_manager.generate_key(
 )
 
 print(f"API Key: {api_key}")
-```
-
-### Using CLI (future)
-
-```bash
-python -m src.auth generate --project-id my-project --rate-limit 100
 ```
 
 ## Using API Keys

@@ -29,10 +29,22 @@ claude-api health deps                   # Verify dependencies
 
 ### API Keys
 ```bash
-# Create key (returns key + instructions)
-claude-api keys create --project-id PROJECT --profile PROFILE
+# Provision a persistent key for a local service (get-or-create)
+claude-api keys provision SERVICE_ID           # Interactive
+claude-api keys provision SERVICE_ID -q        # Just the key (for scripts)
+export CLAUDE_API_KEY=$(claude-api keys provision my-svc -q)
 
-# List all keys
+# Retrieve a stored key
+claude-api keys get SERVICE_ID -q
+
+# List stored keys with validity
+claude-api keys store-list
+
+# Manual creation (with optional persistence)
+claude-api keys create --project-id PROJECT --profile PROFILE
+claude-api keys create --project-id PROJECT --save-as SERVICE_ID
+
+# List all keys in server database
 claude-api keys list
 
 # View permissions
@@ -40,6 +52,7 @@ claude-api keys permissions KEY_PREFIX
 ```
 
 **Profiles:** `free`, `pro`, `enterprise`
+**Key store:** `~/.claude-api/keys/<service-id>.key` (mode 600, persists across restarts)
 
 ### Agent/Skill Discovery
 ```bash
@@ -96,13 +109,11 @@ claude-api service status
 
 ### User: "I need an API key"
 ```bash
-# Create enterprise key (full permissions)
-claude-api keys create --project-id PROJECT_NAME --profile enterprise
+# Provision a persistent key (recommended)
+claude-api keys provision PROJECT_NAME
 
-# Returns:
-# - API key
-# - Permissions summary
-# - .env snippet
+# Or for scripts
+export CLAUDE_API_KEY=$(claude-api keys provision PROJECT_NAME -q)
 ```
 
 ### User: "Test if everything works"
@@ -174,6 +185,8 @@ claude-api keys create --output json    # For scripts
 - Most endpoints require API key
 - Test commands need `--key` option
 - Keys never expire (manual revocation only)
+- Keys persist in `~/.claude-api/keys/` (via `provision` command)
+- `provision` validates stored keys against DB; auto-replaces revoked keys
 
 **Placeholder Commands:**
 - `usage`, `workers`, `tasks` - Need API enhancements
@@ -217,7 +230,7 @@ keys = json.loads(result.stdout)
 
 **Most common user needs:**
 1. "Start the service" → `service start --background`
-2. "Create API key" → `keys create --project-id X --profile enterprise`
+2. "Create API key" → `keys provision SERVICE_ID` (get-or-create with persistence)
 3. "Is it working?" → `health check` or `test all --key KEY`
 4. "Stop the service" → `service stop`
 

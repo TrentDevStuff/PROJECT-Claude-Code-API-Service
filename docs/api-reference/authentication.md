@@ -12,13 +12,28 @@ Since this is a self-hosted service, you create API keys locally using the CLI o
 # Install CLI first
 pip install -e .
 
-# Create an enterprise-tier key
+# Provision a persistent key for a service (get-or-create)
+claude-api keys provision my-app
+
+# Quiet mode for scripts — just the key
+export CLAUDE_API_KEY=$(claude-api keys provision my-app -q)
+
+# Keys stored at ~/.claude-api/keys/<service-id>.key
+# Persist across service restarts; revalidated on each call
+
+# Manual creation (without local persistence)
 claude-api keys create --project-id my-app --profile enterprise
+
+# Manual creation with persistence
+claude-api keys create --project-id my-app --save-as my-app
 
 # Create with custom rate limit
 claude-api keys create --project-id test --profile pro --rate-limit 50
 
-# List all keys
+# View stored keys
+claude-api keys store-list
+
+# List all keys in server database
 claude-api keys list
 
 # View a key's permissions

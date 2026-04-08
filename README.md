@@ -316,6 +316,22 @@ Response to Client
 
 ### API Key Setup
 
+**Using CLI (recommended for local services):**
+
+```bash
+# Provision a persistent key (get-or-create)
+claude-api keys provision my-service
+
+# Use in scripts — returns just the key
+export CLAUDE_API_KEY=$(claude-api keys provision my-service -q)
+
+# Keys are stored in ~/.claude-api/keys/<service-id>.key
+# and persist across service restarts
+claude-api keys store-list    # See all stored keys
+```
+
+**Using Python (programmatic):**
+
 ```python
 from src.auth import AuthManager
 from src.permission_manager import PermissionManager

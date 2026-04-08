@@ -278,6 +278,38 @@ class AuthManager:
 
             return dict(row)
 
+    def list_keys(
+        self, project_id: str | None = None, active_only: bool = False
+    ) -> list[dict]:
+        """
+        List API keys, optionally filtered by project and/or active status.
+
+        Args:
+            project_id: Filter by project (None = all)
+            active_only: If True, exclude revoked keys
+
+        Returns:
+            List of key info dicts
+        """
+        query = "SELECT key, project_id, rate_limit, created_at, last_used_at, revoked FROM api_keys"
+        conditions = []
+        params: list = []
+
+        if project_id:
+            conditions.append("project_id = ?")
+            params.append(project_id)
+        if active_only:
+            conditions.append("revoked = 0")
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " ORDER BY created_at DESC"
+
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
     def cleanup_old_rate_limits(self, hours: int = 24):
         """
         Clean up old rate limit records.

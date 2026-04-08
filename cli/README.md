@@ -80,7 +80,36 @@ claude-api health ping                      # Fast service response check
 
 ### API Key Management (`claude-api keys`)
 
-**Create a key:**
+**Provision a key for a local service (recommended):**
+```bash
+# Get-or-create a persistent key for a service
+claude-api keys provision my-service        # Interactive output
+claude-api keys provision my-service -q     # Just the key (for scripts)
+
+# Use in service startup scripts
+export CLAUDE_API_KEY=$(claude-api keys provision my-service -q)
+
+# Force create new key even if existing one is valid
+claude-api keys provision my-service --force
+
+# With specific profile
+claude-api keys provision my-service --profile pro
+```
+
+Keys are saved to `~/.claude-api/keys/<service-id>.key` and persist across service restarts. On subsequent calls, `provision` returns the existing key if it's still valid.
+
+**Retrieve a stored key:**
+```bash
+claude-api keys get my-service              # Show key + status
+claude-api keys get my-service -q           # Just the key
+```
+
+**List stored keys:**
+```bash
+claude-api keys store-list                  # All stored keys with validity
+```
+
+**Create a key (manual):**
 ```bash
 claude-api keys create \\
   --project-id my-app \\
@@ -88,12 +117,15 @@ claude-api keys create \\
   --rate-limit 100 \\
   --name "Production Key"
 
+# Save to key store during creation
+claude-api keys create --project-id my-app --save-as my-app
+
 # Output formats
 claude-api keys create --project-id test --output json
 claude-api keys create --project-id test --output env
 ```
 
-**List keys:**
+**List keys (server database):**
 ```bash
 claude-api keys list                        # List all keys
 claude-api keys list --project-id my-app    # Filter by project
@@ -378,11 +410,11 @@ claude-api service start --background
 # 3. Wait a moment, then check status
 claude-api service status
 
-# 4. Create an API key
-claude-api keys create --project-id test --profile enterprise
+# 4. Provision an API key (creates and persists locally)
+claude-api keys provision my-app
 
 # 5. Test endpoints
-claude-api test all --key YOUR_KEY
+claude-api test all --key $(claude-api keys get my-app -q)
 ```
 
 ### Debugging Issues
@@ -410,14 +442,11 @@ claude-api service restart
 # List current keys
 claude-api keys list
 
-# Create new key
-claude-api keys create --project-id my-app --profile enterprise
-
-# Update application to use new key
-# (manual step in your application)
+# Force-provision a new key (replaces stored key)
+claude-api keys provision my-app --force
 
 # Test new key
-claude-api keys test NEW_KEY
+claude-api keys test $(claude-api keys get my-app -q)
 
 # Revoke old key
 claude-api keys revoke OLD_KEY
@@ -458,10 +487,13 @@ redis-server --daemonize yes
 
 **"API key is invalid"**
 ```bash
-# Verify key exists
-claude-api keys list
+# Check if stored key is still valid
+claude-api keys get my-service
 
-# Create new key if needed
+# Re-provision (creates new key if stored one is invalid)
+claude-api keys provision my-service
+
+# Or create manually
 claude-api keys create --project-id test
 ```
 
@@ -480,16 +512,14 @@ if not_running:
     run("claude-api service start --background")
     time.sleep(2)
 
-# 3. Create API key for user
-result = run("claude-api keys create --project-id test --output json")
-api_key = parse_json(result)["key"]
+# 3. Provision a persistent API key (get-or-create)
+api_key = run("claude-api keys provision my-agent -q").strip()
 
 # 4. Test endpoints
 run(f"claude-api test all --key {api_key}")
 
 # 5. Report to user
 report(f"Service ready at http://localhost:8006")
-report(f"API Key: {api_key}")
 ```
 
 ## See Also
