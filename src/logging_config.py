@@ -43,6 +43,12 @@ class JSONFormatter(logging.Formatter):
             "latency_ms",
             "input_tokens",
             "output_tokens",
+            # Prompt caching observability
+            "cache_creation_tokens",
+            "cache_read_tokens",
+            "cache_hit_ratio",
+            "cache_breakpoints",
+            "has_tool_use",
         ):
             value = getattr(record, key, None)
             if value is not None:

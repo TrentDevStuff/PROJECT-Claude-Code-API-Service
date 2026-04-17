@@ -21,12 +21,15 @@ from src.worker_pool import TaskResult, TaskStatus
 
 logger = logging.getLogger(__name__)
 
-# Model name → Anthropic API model ID
+# Model short name → Anthropic API model ID.
+# Use the bare aliases (no date suffix) — those are stable per Anthropic's
+# model reference. A stale date suffix returns 404 not_found_error on the
+# Messages API. Callers may also pass a full model ID (e.g.
+# "claude-opus-4-7") directly; it's passed through unchanged.
 MODEL_MAP = {
-    "haiku": "claude-haiku-4-5-20251001",
-    "sonnet": "claude-sonnet-4-6-20250514",
-    "opus": "claude-opus-4-6-20250514",
-    # Allow full model IDs to pass through
+    "haiku": "claude-haiku-4-5",
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-6",
 }
 
 # Cost per million tokens (matches WorkerPool.COST_PER_MTK)
@@ -68,6 +71,80 @@ class DirectCompletionClient:
             schema = tool.get("input_schema", {})
             if schema and schema.get("type") != "object":
                 logger.warning("tool_validation_warning", extra={"tool_name": name, "issue": "input_schema_type_not_object"})
+
+    @staticmethod
+    def _apply_cache_markers(kwargs: dict) -> int:
+        """Annotate the request with ``cache_control`` markers in-place.
+
+        Render order is ``tools`` → ``system`` → ``messages``. Each marker
+        caches the full prefix up to and including the marked block, so we
+        place at most two breakpoints:
+
+        1. On the last system text block (or, if no system, on the last tool)
+           to cache the tools + system prefix. This prefix is usually stable
+           across a session and shared across conversations that use the
+           same tools.
+        2. On the last user message's last content block to cache the full
+           message history. Each follow-up turn then reads the prior history
+           from cache instead of re-processing it.
+
+        The Anthropic minimum-cacheable-prefix rule (4096 tokens on Opus 4.5+,
+        2048 on Sonnet 4.6) means short prompts silently won't cache — no
+        write cost is charged, so this is safe to enable unconditionally.
+
+        Returns the number of cache_control breakpoints applied (for logging).
+        """
+        breakpoints = 0
+
+        # --- Breakpoint 1: end of tools + system prefix -------------------
+        system = kwargs.get("system")
+        if isinstance(system, str) and system:
+            # Upgrade to list-of-blocks form so we can attach cache_control.
+            kwargs["system"] = [{
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"},
+            }]
+            breakpoints += 1
+        elif isinstance(system, list) and system:
+            last = system[-1]
+            if isinstance(last, dict):
+                last["cache_control"] = {"type": "ephemeral"}
+                breakpoints += 1
+        else:
+            # No system prompt — fall back to marking the last tool so the
+            # tools prefix still gets cached on repeat requests.
+            tools = kwargs.get("tools")
+            if isinstance(tools, list) and tools and isinstance(tools[-1], dict):
+                tools[-1]["cache_control"] = {"type": "ephemeral"}
+                breakpoints += 1
+
+        # --- Breakpoint 2: end of message history -------------------------
+        # Place on the last user message's last content block so follow-up
+        # turns can read the entire prior conversation from cache. The last
+        # user message is the final user turn (before the assistant's next
+        # response); placing the marker inside assistant or tool_result
+        # content would work too but cluttering user content is simpler.
+        messages = kwargs.get("messages") or []
+        for msg in reversed(messages):
+            if not isinstance(msg, dict) or msg.get("role") != "user":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and content:
+                msg["content"] = [{
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }]
+                breakpoints += 1
+            elif isinstance(content, list) and content:
+                last = content[-1]
+                if isinstance(last, dict):
+                    last["cache_control"] = {"type": "ephemeral"}
+                    breakpoints += 1
+            break
+
+        return breakpoints
 
     def complete(
         self,
@@ -136,6 +213,13 @@ class DirectCompletionClient:
             if tool_choice:
                 kwargs["tool_choice"] = tool_choice
 
+            # Apply prompt caching markers when enabled. Safe default — short
+            # prefixes silently won't cache (no write cost); repeated prefixes
+            # get ~90% input-cost reduction on cached tokens.
+            cache_breakpoints = 0
+            if settings.prompt_caching_enabled:
+                cache_breakpoints = self._apply_cache_markers(kwargs)
+
             response = self.client.messages.create(**kwargs)
 
             # Extract content — preserve structure for tool calls
@@ -168,17 +252,47 @@ class DirectCompletionClient:
                             },
                         )
 
-            # Extract usage
+            # Extract usage. Anthropic reports cache activity separately:
+            #   input_tokens              — uncached portion (full rate)
+            #   cache_creation_input_tokens — tokens written to cache this
+            #                                request (1.25× for 5-min TTL)
+            #   cache_read_input_tokens   — tokens served from cache this
+            #                                request (~0.1× of input rate)
+            # Fields are optional on older responses and may be None; coerce
+            # to int so non-numeric defaults don't poison arithmetic below.
+            def _safe_int(val) -> int:
+                return val if isinstance(val, int) else 0
+
             input_tokens = response.usage.input_tokens
             output_tokens = response.usage.output_tokens
+            cache_creation_tokens = _safe_int(
+                getattr(response.usage, "cache_creation_input_tokens", 0)
+            )
+            cache_read_tokens = _safe_int(
+                getattr(response.usage, "cache_read_input_tokens", 0)
+            )
 
-            # Calculate cost
+            # Calculate cost using Anthropic's multipliers.
             rates = COST_PER_MTK.get(model_short, COST_PER_MTK["sonnet"])
-            cost = (input_tokens / 1_000_000) * rates["input"] + (
-                output_tokens / 1_000_000
-            ) * rates["output"]
+            input_rate = rates["input"] / 1_000_000
+            output_rate = rates["output"] / 1_000_000
+            cost = (
+                input_tokens * input_rate
+                + cache_creation_tokens * input_rate * 1.25
+                + cache_read_tokens * input_rate * 0.1
+                + output_tokens * output_rate
+            )
 
             t_done = time.monotonic()
+            # Cache hit ratio: reads / total prompt tokens. Useful for alerting
+            # when a previously-cached prefix starts regressing to 0% hits
+            # (the classic silent-invalidator failure mode).
+            total_prompt_tokens = input_tokens + cache_creation_tokens + cache_read_tokens
+            cache_hit_ratio = (
+                round(cache_read_tokens / total_prompt_tokens, 3)
+                if total_prompt_tokens > 0
+                else 0.0
+            )
             logger.info(
                 "sdk_direct_completion",
                 extra={
@@ -186,6 +300,10 @@ class DirectCompletionClient:
                     "latency_ms": round((t_done - t_start) * 1000, 1),
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
+                    "cache_creation_tokens": cache_creation_tokens,
+                    "cache_read_tokens": cache_read_tokens,
+                    "cache_hit_ratio": cache_hit_ratio,
+                    "cache_breakpoints": cache_breakpoints,
                     "has_tool_use": has_tool_use,
                 },
             )
