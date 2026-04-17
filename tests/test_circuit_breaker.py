@@ -6,7 +6,35 @@ import threading
 import time
 from unittest.mock import patch
 
+import pytest
+
 from src.circuit_breaker import CircuitBreaker, RETRYABLE_CATEGORIES
+
+
+def _run_with_timeout(fn, timeout_seconds: float = 2.0):
+    """Run ``fn`` in a daemon thread and raise if it doesn't finish in time.
+
+    Used to guard tests against lock-reentrancy regressions that would
+    otherwise hang pytest indefinitely.
+    """
+    result: dict = {}
+
+    def runner():
+        try:
+            result["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001
+            result["error"] = exc
+
+    t = threading.Thread(target=runner, daemon=True)
+    t.start()
+    t.join(timeout_seconds)
+    if t.is_alive():
+        raise AssertionError(
+            f"Call did not complete within {timeout_seconds}s — likely deadlock"
+        )
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
 
 
 class TestCircuitBreaker:
@@ -104,12 +132,60 @@ class TestCircuitBreaker:
 
     def test_status_output(self):
         cb = CircuitBreaker(failure_threshold=5, recovery_timeout=30.0, name="sdk")
-        status = cb.status()
+        status = _run_with_timeout(cb.status)
         assert status["name"] == "sdk"
         assert status["state"] == "closed"
         assert status["consecutive_failures"] == 0
         assert status["failure_threshold"] == 5
         assert status["recovery_timeout_seconds"] == 30.0
+
+    def test_status_does_not_deadlock_on_non_reentrant_lock(self):
+        """Regression: ``status()`` must not re-acquire ``self._lock``.
+
+        The bug: ``status()`` took ``self._lock`` and then read ``self.state``,
+        which is a ``@property`` that also takes ``self._lock``. Because
+        ``threading.Lock`` is non-reentrant, this deadlocked the calling thread
+        permanently. The first caller was ``/health``, which blocked the
+        uvicorn single-threaded event loop and made every subsequent request
+        hang. See commit fixing circuit_breaker.py for details.
+        """
+        cb = CircuitBreaker(name="regression")
+        _run_with_timeout(cb.status, timeout_seconds=1.0)
+
+    def test_status_reports_half_open_after_recovery_timeout(self):
+        """``status()`` must compute the open→half_open transition just like
+        the ``state`` property, so /health reflects reality."""
+        cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01, name="recovery")
+        cb.record_failure("upstream_error")
+        assert _run_with_timeout(cb.status)["state"] == "open"
+        time.sleep(0.02)
+        assert _run_with_timeout(cb.status)["state"] == "half_open"
+
+    def test_status_is_consistent_under_concurrent_mutation(self):
+        """``status()`` must return a consistent snapshot even while another
+        thread is recording failures. Thread-safety regression guard."""
+        cb = CircuitBreaker(failure_threshold=1000, name="concurrent")
+        stop = threading.Event()
+
+        def churn():
+            while not stop.is_set():
+                cb.record_failure("timeout")
+                cb.record_success()
+
+        workers = [threading.Thread(target=churn, daemon=True) for _ in range(4)]
+        for w in workers:
+            w.start()
+        try:
+            for _ in range(200):
+                snap = _run_with_timeout(cb.status, timeout_seconds=1.0)
+                # state must always be one of the valid values
+                assert snap["state"] in ("closed", "open", "half_open")
+                # counter must be non-negative
+                assert snap["consecutive_failures"] >= 0
+        finally:
+            stop.set()
+            for w in workers:
+                w.join(timeout=1.0)
 
     def test_configurable_thresholds(self):
         cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01, name="custom")

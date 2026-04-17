@@ -96,22 +96,35 @@ class CircuitBreaker:
                     self._consecutive_failures,
                 )
 
+    def _compute_state_locked(self) -> str:
+        """Return the effective current state. Caller must hold ``self._lock``.
+
+        Pure read — does not persist the automatic open→half_open transition
+        (``allow_request`` is responsible for persisting it when a probe is
+        actually admitted).
+        """
+        if self._state == "open" and self._opened_at:
+            if (time.monotonic() - self._opened_at) >= self.recovery_timeout:
+                return "half_open"
+        return self._state
+
     @property
     def state(self) -> str:
         """Current state: 'closed', 'open', 'half_open'."""
         with self._lock:
-            # Check for automatic transition to half_open
-            if self._state == "open" and self._opened_at:
-                if (time.monotonic() - self._opened_at) >= self.recovery_timeout:
-                    return "half_open"
-            return self._state
+            return self._compute_state_locked()
 
     def status(self) -> dict:
-        """Health check data for /health endpoint."""
+        """Health check data for /health endpoint.
+
+        Snapshots all fields under a single lock acquisition so callers see
+        a consistent view. Must not call ``self.state`` here — that property
+        re-acquires ``self._lock`` and would deadlock on a non-reentrant Lock.
+        """
         with self._lock:
             return {
                 "name": self.name,
-                "state": self.state,
+                "state": self._compute_state_locked(),
                 "consecutive_failures": self._consecutive_failures,
                 "failure_threshold": self.failure_threshold,
                 "recovery_timeout_seconds": self.recovery_timeout,
