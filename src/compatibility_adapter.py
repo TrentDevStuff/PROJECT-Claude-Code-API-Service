@@ -77,10 +77,12 @@ class ProcessRequest(BaseModel):
     media_content: list[dict] | None = Field(None, description="Multimodal content (not supported)")
     memory: dict | None = Field(None, description="Memory management (not supported)")
 
-    # Execution path control (SDK is default for speed; CLI needed for tools/agents/MCP)
-    use_cli: bool = Field(
-        False,
-        description="Use Claude CLI instead of SDK. Required for tools, agents, skills, MCP, working directory context.",
+    # Execution path control. When omitted, falls back to server default
+    # (CLAUDE_API_DEFAULT_USE_CLI, typically True for Claude Max / False for API key billing).
+    # Explicitly set True to force CLI (tools/agents/skills/MCP), or False to force SDK.
+    use_cli: bool | None = Field(
+        None,
+        description="Use Claude CLI instead of SDK. If omitted, uses server default (CLAUDE_API_DEFAULT_USE_CLI). True forces CLI (needed for tools, agents, skills, MCP, working directory context); False forces direct Anthropic SDK.",
     )
 
     # Metadata

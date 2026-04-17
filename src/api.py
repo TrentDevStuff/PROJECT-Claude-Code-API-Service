@@ -723,8 +723,16 @@ async def process_ai_services_compatible(
     if not await budget_manager.check_budget(request.project_id, estimated_tokens):
         raise HTTPException(403, f"Budget exceeded for project {request.project_id}")
 
-    # Determine execution path: SDK (default, fast) vs CLI (opt-in, full features)
-    use_cli = request.use_cli or sdk_client is None
+    # Determine execution path. Precedence:
+    #   1. Explicit request.use_cli (true or false) wins.
+    #   2. Omitted → server default from settings.default_use_cli.
+    #   3. If SDK client unavailable, force CLI regardless.
+    if request.use_cli is None:
+        use_cli = settings.default_use_cli
+    else:
+        use_cli = request.use_cli
+    if sdk_client is None:
+        use_cli = True
 
     if not use_cli:
         # SDK path (default) — fast, simple completions via Anthropic API
