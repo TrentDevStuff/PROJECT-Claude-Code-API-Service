@@ -17,13 +17,15 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from forgg_observability import init_telemetry, setup_logging
+from forgg_observability.middleware.fastapi import ForggLoggingMiddleware
+
 from src.api import initialize_services
 from src.api import router as api_router
 from src.audit_logger import AuditLogger
 from src.auth import AuthManager, initialize_auth
 from src.budget_manager import BudgetManager
 from src.cache import RedisCache
-from src.logging_config import setup_logging
 from src.middleware import RequestIDMiddleware
 from src.permission_manager import PermissionManager
 from src.settings import settings
@@ -33,9 +35,48 @@ from src.direct_completion import DirectCompletionClient
 from src.error_tracker import ErrorTracker
 from src.worker_pool import WorkerPool
 
-# Configure logging early (before anything else logs)
-setup_logging(level=settings.log_level, json_format=settings.log_json)
+# Logger handle — actual logging configuration happens in lifespan() via
+# forgg_observability.setup_logging so structlog/OTel context is present
+# from the first request. Module-level imports above may emit a few stdlib
+# log lines before that runs; those use Python's default handler.
 logger = logging.getLogger(__name__)
+
+SERVICE_NAME = "claude-code-api-service"
+
+# Whitelist of CCA-emitted extra fields. Merged with forgg's
+# DEFAULT_ALLOWED_LOG_FIELDS inside setup_logging(). Anything outside
+# this list will trigger a structlog warning (governance signal).
+ALLOWED_EXTRA_LOG_FIELDS = (
+    "request_id",
+    "method",
+    "path",
+    "status_code",
+    "duration_ms",
+    "max_workers",
+    "service",
+    "detail",
+    # Error observability
+    "error_category",
+    "upstream_status",
+    "is_retryable",
+    "circuit_state",
+    "retry_count",
+    "task_id",
+    "model",
+    "latency_ms",
+    "input_tokens",
+    "output_tokens",
+    # Prompt caching observability
+    "cache_creation_tokens",
+    "cache_read_tokens",
+    "cache_hit_ratio",
+    "cache_breakpoints",
+    "has_tool_use",
+    # Tool calling
+    "tool_name",
+    "tool_id",
+    "overhead_ms",
+)
 
 # Global service instances
 worker_pool: WorkerPool | None = None
@@ -71,6 +112,26 @@ async def lifespan(app: FastAPI):
     # is started from inside a Claude Code session).
     for _var in ("CLAUDECODE", "CLAUDE_CODE_SESSION"):
         os.environ.pop(_var, None)
+
+    # Initialize OTel tracing + structlog FIRST so every subsequent log line
+    # carries service.name + trace_id and any startup span has a parent
+    # context to attach to. Disable instrumentors for connectors CCA does
+    # not use (no Postgres / no Mongo) to avoid harmless WARNING noise from
+    # the v0.3.0 "missing instrumentor" banner.
+    init_telemetry(
+        service_name=SERVICE_NAME,
+        service_version=app.version,
+        environment=os.getenv("ENVIRONMENT", "development"),
+        enable_asyncpg=False,
+        enable_psycopg=False,
+        enable_pymongo=False,
+    )
+    setup_logging(
+        service_name=SERVICE_NAME,
+        allowed_extra_fields=ALLOWED_EXTRA_LOG_FIELDS,
+        log_level=settings.log_level.upper(),
+        json_output=settings.log_json,
+    )
 
     # Startup: Initialize services
     worker_pool = WorkerPool(max_workers=settings.max_workers, mcp_config=settings.mcp_config)
@@ -167,10 +228,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Request ID middleware (pure ASGI — wraps all requests including CORS)
+# Middleware order matters. ASGI applies middleware bottom-up at request
+# time, so the LAST add_middleware call is the OUTERMOST wrapper. We want
+# CORS outermost (sees every request, including preflight), then forgg
+# logging (needs request_id from RequestIDMiddleware), then RequestID
+# innermost (sets the request_id structlog binding).
 app.add_middleware(RequestIDMiddleware)
-
-# Enable CORS for web clients
+app.add_middleware(ForggLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
