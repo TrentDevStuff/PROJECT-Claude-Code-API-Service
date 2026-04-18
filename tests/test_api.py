@@ -232,7 +232,7 @@ def test_chat_completion_task_failed(
         )
 
         assert response.status_code == 500
-        assert "Task failed" in response.json()["detail"]
+        assert response.json()["detail"] == "Process crashed"
 
 
 # ============================================================================

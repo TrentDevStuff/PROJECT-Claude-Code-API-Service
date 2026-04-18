@@ -68,3 +68,6 @@ dump.rdb
 tmp/
 temp/
 *.tmp
+
+# Per-session scratch (orchestration ephemera, not source)
+.claude-project/daily/
