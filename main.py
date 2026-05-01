@@ -26,7 +26,7 @@ from src.audit_logger import AuditLogger
 from src.auth import AuthManager, initialize_auth
 from src.budget_manager import BudgetManager
 from src.cache import RedisCache
-from src.middleware import RequestIDMiddleware
+from src.middleware import CCARequestIdSpanProcessor, RequestIDMiddleware
 from src.permission_manager import PermissionManager
 from src.settings import settings
 from src.websocket import _streamer, initialize_websocket, websocket_endpoint
@@ -132,6 +132,19 @@ async def lifespan(app: FastAPI):
         log_level=settings.log_level.upper(),
         json_output=settings.log_json,
     )
+
+    # Register the CCA request-id span processor so every span emitted
+    # during a request carries `forgg.cca_request_id` for cross-service
+    # correlation with ACA (per MSG-CCA-20260501-002-to-ACA).
+    from opentelemetry import trace as _otel_trace
+    _provider = _otel_trace.get_tracer_provider()
+    if hasattr(_provider, "add_span_processor"):
+        _provider.add_span_processor(CCARequestIdSpanProcessor())
+    else:
+        logger.warning(
+            "OTel tracer provider missing add_span_processor; "
+            "forgg.cca_request_id span attribute will not be emitted"
+        )
 
     # Startup: Initialize services
     worker_pool = WorkerPool(max_workers=settings.max_workers, mcp_config=settings.mcp_config)
