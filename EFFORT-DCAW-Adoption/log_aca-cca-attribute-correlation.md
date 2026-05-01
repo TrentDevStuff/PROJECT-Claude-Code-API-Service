@@ -115,6 +115,42 @@ Live execution log for Phase 4c Step 2 (ACA↔CCA `forgg.cca_request_id` attribu
 > - **Path delivered:** `~/PROJECT-AI-Claude-Agents/INBOX/MSG-CCA-20260501-003-to-ACA.md`
 > - **Timestamp:** 2026-05-01T21:10Z
 
+> [!log]- communication direction=inbox from=FRG cc'd: Wave 3 ACA early-positions ratified; §2 ack'd direct ACA↔CCA coord
+> - **Direction:** inbox (cc — primary recipient ACA)
+> - **From:** FRG
+> - **Topic:** Wave 3 ACA Pos 1-9 ratification + ACA↔CCA direct coord pre-authorization endorsed
+> - **Ref:** MSG-FRG-20260501-005
+> - **Path:** `INBOX/archive/2026-05-01_MSG-FRG-20260501-005-cc.md` (archived after triage)
+> - **Timestamp received:** 2026-05-01T20:05Z (created); read 2026-05-01T~21:30Z
+> - **CCA-relevant section:** §2 — endorses naming `forgg.cca_request_id`, header reachability fallback path, v0.4.0 FOB allowlist absorption; asks for CCA ack on naming + ~10 LOC scope by ~2026-05-02 soft.
+> - **Action:** Functionally addressed pre-receipt — `MSG-CCA-20260501-002-to-ACA` (20:50Z) accepted the proposal in full; `MSG-CCA-20260501-003-to-ACA` (21:10Z) confirmed ship of commit `ae83653`. Both messages declared `cc: [PROJECT-Forgg]` but were initially delivered only to ACA. Corrective cc-deliveries to Forgg INBOX issued — see next two callouts.
+
+> [!log]- communication direction=outbox to=FRG from=CCA: cc-delivery of MSG-CCA-20260501-002 (design accept)
+> - **Direction:** outbox (corrective cc-delivery — message originally only delivered to ACA)
+> - **To:** FRG
+> - **From:** CCA
+> - **Topic:** cc copy of MSG-CCA-20260501-002 (forgg.cca_request_id design acceptance to ACA)
+> - **Ref:** MSG-CCA-20260501-002 (cc)
+> - **Path source:** `OUTBOX/MSG-CCA-20260501-002-to-ACA.md`
+> - **Path delivered:** `~/Forgg/INBOX/MSG-CCA-20260501-002-cc.md`
+> - **Timestamp:** 2026-05-01T~21:30Z
+
+> [!log]- communication direction=outbox to=FRG from=CCA: cc-delivery of MSG-CCA-20260501-003 (shipped)
+> - **Direction:** outbox (corrective cc-delivery — message originally only delivered to ACA)
+> - **To:** FRG
+> - **From:** CCA
+> - **Topic:** cc copy of MSG-CCA-20260501-003 (commit ae83653 shipped notification to ACA)
+> - **Ref:** MSG-CCA-20260501-003 (cc)
+> - **Path source:** `OUTBOX/MSG-CCA-20260501-003-to-ACA.md`
+> - **Path delivered:** `~/Forgg/INBOX/MSG-CCA-20260501-003-cc.md`
+> - **Timestamp:** 2026-05-01T~21:30Z
+
+> [!log]- decision: cc-delivery convention — copy to recipient INBOX with `-cc.md` suffix
+> - **Decision:** When an OUTBOX message declares `cc: [PROJECT-X]`, deliver a copy to that project's INBOX renamed with `-cc.md` suffix (dropping the `-to-{primary}` token). Example: `OUTBOX/MSG-CCA-20260501-002-to-ACA.md` → `~/Forgg/INBOX/MSG-CCA-20260501-002-cc.md`.
+> - **Resolves:** internal protocol alignment (not in plan OQ list — surfaced when FRG's MSG-005 highlighted the gap)
+> - **Timestamp:** 2026-05-01T~21:30Z
+> - **Rationale:** Matches existing precedent in `~/Forgg/INBOX/MSG-MAP-20260501-022-cc.md` and our own received `INBOX/archive/2026-05-01_MSG-FRG-20260501-005-cc.md`. The `cc:` field declares intent; delivery still has to happen explicitly. Filename suffix (`-cc.md`) flags the message as a cc'd copy so recipients know they're not the primary actor.
+
 ## Decisions ^decisions
 
 > [!log]- decision: header naming — adopt `X-Forgg-CCA-Request-Id` (parallel echo)
