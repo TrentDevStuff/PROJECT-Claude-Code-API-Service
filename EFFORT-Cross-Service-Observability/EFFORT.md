@@ -2,18 +2,18 @@
 type: effort
 effort_id: EFFORT-Cross-Service-Observability
 project: claude-code-api-service
-status: planning
+status: in_progress
 priority: high
-progress: 0%
+progress: 60%
 created: 2026-04-11T00:00:00Z
-last_updated: 2026-04-11T00:00:00Z
+last_updated: 2026-05-01T21:50:00Z
 linked_goal: null
 related_forgg_effort: EFFORT-Cross-Service-Observability (PROJECT-Forgg)
 forgg_phase: 4c
 forgg_cycle: 4
 dependencies:
-  - PROJECT-Forgg Phase 0 (forgg-observability package published)
-  - PROJECT-Forgg Phase 3 (claude-agents trace context flows into CCAS)
+  - PROJECT-Forgg Phase 0 (forgg-observability package published)  # ✅ landed
+  - PROJECT-Forgg Phase 3 (claude-agents trace context flows into CCAS)  # ⏳ open — but ACA-002 wire-test confirmed traceparent waterfall isn't viable across the Bun-binary subprocess; Phase 4a settled on attribute-based correlation via forgg.cca_request_id (Step 2 below)
 ---
 
 # EFFORT: Cross-Service Observability (Phase 4c)
@@ -59,20 +59,21 @@ CCAS is the LLM routing proxy between the agent runtime (claude-agents, port 800
 
 ## Success Criteria
 
-- [ ] `forgg-observability[fastapi,redis,llm]` installed and locked in requirements
-- [ ] `init_telemetry()` and `setup_logging()` called in `main.py` lifespan before worker pool starts
-- [ ] `ForggLoggingMiddleware` installed after `RequestIDMiddleware`
-- [ ] HTTP receive spans appear in SigNoz for both `/v1/chat/completions` and `/v1/process` with `forgg.tenant_id` and `forgg.conversation_id` attributes (when provided by caller)
-- [ ] SDK path produces a `gen_ai.*` span (via OpenLLMetry) nested inside the HTTP parent span
-- [ ] CLI path produces a `llm.cli_path.subprocess` span nested inside the HTTP parent span with `subprocess.pid`, `subprocess.returncode`, `subprocess.duration_ms` attributes
-- [ ] CLI subprocess environment contains `TRACEPARENT` matching the parent span (verified via integration test)
-- [ ] `run_in_executor` context propagation verified — spans emitted inside executor callables attach to the correct parent
-- [ ] A request from claude-agents to CCAS shows as a connected span chain in SigNoz (requires Phase 4a complete for upstream attribution)
-- [ ] Structured logs include `trace_id`, `span_id`, and all 10 existing whitelisted fields (`error_category`, `upstream_status`, `retry_count`, `task_id`, `model`, `latency_ms`, `input_tokens`, `output_tokens`, `circuit_state`, `is_retryable`)
-- [ ] No prompt/completion content in any span attribute (verified via SigNoz query)
-- [ ] Bearer auth spans show `auth.method=bearer` + success/failure result
-- [ ] p99 latency delta <1% vs pre-instrumentation baseline (measured over 100 requests per endpoint per path)
-- [ ] Existing test suite passes (no regressions)
+- [x] `forgg-observability[fastapi,redis,llm]` installed and locked in requirements (Step 1)
+- [x] `init_telemetry()` and `setup_logging()` called in `main.py` lifespan before worker pool starts (Step 1, commit `10bcfe9`)
+- [x] `ForggLoggingMiddleware` installed after `RequestIDMiddleware` (Step 1)
+- [x] **Cross-service correlation attribute `forgg.cca_request_id` emitted on every span via custom `CCARequestIdSpanProcessor`; response header `X-Forgg-CCA-Request-Id` echoed on all `/v1/*` endpoints** (Step 2, commit `ae83653`) — **substitutes for the `traceparent` waterfall ACA's wire test ruled out**
+- [ ] HTTP receive spans appear in SigNoz for both `/v1/chat/completions` and `/v1/process` with `forgg.tenant_id` and `forgg.conversation_id` attributes (when provided by caller) — **deferred to joint verification slot ~2026-05-04**
+- [ ] SDK path produces a `gen_ai.*` span (via OpenLLMetry) nested inside the HTTP parent span — **OpenLLMetry installed; verification deferred**
+- [ ] CLI path produces a `llm.cli_path.subprocess` span nested inside the HTTP parent span with `subprocess.pid`, `subprocess.returncode`, `subprocess.duration_ms` attributes — **Step 3+ scope**
+- [ ] CLI subprocess environment contains `TRACEPARENT` matching the parent span (verified via integration test) — **partially relaxed per ACA-002: the Bun-binary subprocess does not propagate `traceparent`, so CLI subprocess span emission is best-effort and the cross-service join falls back to `forgg.cca_request_id` attribute correlation (already shipped)**
+- [ ] `run_in_executor` context propagation verified — spans emitted inside executor callables attach to the correct parent — **Step 3+ scope**
+- [ ] A request from claude-agents to CCAS shows as a connected span chain in SigNoz — **redefined per ACA-002: two trace trees joined via `forgg.cca_request_id` attribute (not nested waterfall). Joint verification scheduled with ACA Day 4-5 ~2026-05-03 → 05-04**
+- [ ] Structured logs include `trace_id`, `span_id`, and all 10 existing whitelisted fields (`error_category`, `upstream_status`, `retry_count`, `task_id`, `model`, `latency_ms`, `input_tokens`, `output_tokens`, `circuit_state`, `is_retryable`) — **infrastructure landed Step 1; verification in pilot**
+- [ ] No prompt/completion content in any span attribute (verified via SigNoz query) — **TRACELOOP_TRACE_CONTENT=false default in Step 1**
+- [ ] Bearer auth spans show `auth.method=bearer` + success/failure result — **Step 3+ scope**
+- [ ] p99 latency delta <1% vs pre-instrumentation baseline (measured over 100 requests per endpoint per path) — **deferred until pilot**
+- [x] Existing test suite passes (no regressions) — 333 passed / 16 skipped / 0 failures after Step 2; was 309 before Step 2.
 
 ## Affected Files
 
@@ -138,3 +139,13 @@ CCAS is the LLM routing proxy between the agent runtime (claude-agents, port 800
 ## Status
 
 **2026-04-11:** Effort created. Preliminary plan drafted. Awaiting FORGG response to clarifying questions (see §6 of MSG-CCA-20260411-001) and formal go-signal to begin work. Execution is blocked on Phase 0 shipping `forgg-observability` to a pip-installable location and on Phase 3 closing the Redis Streams trace gap upstream.
+
+**2026-04-13:** EXECUTE acked (`MSG-CCA-20260413-001`). `forgg-observability[fastapi,redis,llm]` installed editable from `/Users/trent/PROJECT-Forgg-Observability`; anthropic 0.50.0 confirmed compatible with OpenLLMetry instrumentor 0.59.0. Idle until Week 4 Day 2-3.
+
+**2026-05-01:** **Step 1 shipped.** Commit `10bcfe9` on `feature/phase-4c-instrumentation` — `init_telemetry()` + `setup_logging()` wired in `main.py` lifespan; `ForggLoggingMiddleware` installed; FastAPI auto-instrumentation enabled.
+
+**2026-05-01:** **Phase 4a span-contract revision absorbed.** Per ACA-002 (`MSG-ACA-20260429-002-to-FRG`, ratified by FRG `MSG-FRG-20260430-001-to-ACA` §2 and acknowledged in `MSG-FRG-20260501-005-cc` §2): the Anthropic Claude Code CLI is a Bun-compiled native binary that does not propagate `traceparent` despite compiled-in OTel. Pure waterfall correlation across the SDK subprocess boundary is therefore not achievable in this Phase 4a window. Phase 4a settled on **attribute-based correlation** via `forgg.cca_request_id`. `gen_ai.*` ownership cleanly to CCA (Phase 4c); ACA owns `agent.execute` + `tool.call` Pre/Post + `agent.delegation`. v0.3.0 allowlist unchanged; FOB v0.4.0 absorbs `forgg.cca_request_id` additively in `forgg.*` namespace (no PR needed).
+
+**2026-05-01:** **Step 2 shipped.** Commit `ae83653` on `feature/phase-4c-instrumentation` — `forgg.cca_request_id` span attribute emitted on every span via custom `CCARequestIdSpanProcessor` registered in `main.py` lifespan; `X-Forgg-CCA-Request-Id` response header echoed on all `/v1/*` endpoints (alongside the existing `X-Request-Id` echo, same UUID, single mint). Implementation pattern: contextvar (`cca_request_id_ctx`) populated by `RequestIDMiddleware`, copied onto every recording span at `on_start` time. 8 new tests in `tests/test_middleware.py`; full suite 333 passing, 16 skipped, 0 failures. Coord trail tracked in companion `EFFORT-DCAW-Adoption/` (CCA's first DCAW T0 artifact). Outbound: `MSG-CCA-20260501-002-to-ACA` (design accept) + `MSG-CCA-20260501-003-to-ACA` (shipped, commit `ae83653`); both cc'd to Forgg via `MSG-CCA-20260501-002-cc.md` / `MSG-CCA-20260501-003-cc.md`. Joint SigNoz verification scheduled with ACA Day 4-5 ~2026-05-03 → 05-04 (Phase 4a Day 7). Branch pushed to `origin/feature/phase-4c-instrumentation`.
+
+**Pending (Step 3+):** CLI-path subprocess span (`llm.cli_path.subprocess`), bearer auth span attributes, `run_in_executor` propagation integration test, p99 latency budget regression test. SDK-path `gen_ai.*` spans should already be emitting via OpenLLMetry — verify in joint SigNoz session.
