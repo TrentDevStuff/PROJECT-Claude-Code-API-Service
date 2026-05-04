@@ -151,6 +151,37 @@ Live execution log for Phase 4c Step 2 (ACA↔CCA `forgg.cca_request_id` attribu
 > - **Timestamp:** 2026-05-01T~21:30Z
 > - **Rationale:** Matches existing precedent in `~/Forgg/INBOX/MSG-MAP-20260501-022-cc.md` and our own received `INBOX/archive/2026-05-01_MSG-FRG-20260501-005-cc.md`. The `cc:` field declares intent; delivery still has to happen explicitly. Filename suffix (`-cc.md`) flags the message as a cc'd copy so recipients know they're not the primary actor.
 
+> [!log]- communication direction=inbox from=FRG cc'd: 2026-05-02 batch close-loop (CCA same-day ship codified as protocol exemplar)
+> - **Direction:** inbox (cc — primary recipient ACA, batch-style close-loop covering 6 inbound messages)
+> - **From:** FRG
+> - **Topic:** Coord-wave close-loop; CCA-relevant §1.1-§1.4
+> - **Ref:** MSG-FRG-20260502-004
+> - **Path:** `INBOX/archive/2026-05-04_MSG-FRG-20260502-004-cc.md` (archived after triage)
+> - **Timestamp received:** 2026-05-02T00:45Z (created); read 2026-05-04T~16:00Z
+> - **CCA-relevant content:**
+>   - §1.1: `MSG-CCA-20260501-002` ack'd as FYI; ~5-8 LOC scope refinement (down from ACA's ~10 LOC estimate via `RequestIDMiddleware` reuse) noted; body-embed fallback (§3.2(a)) standby acknowledged
+>   - §1.2: `MSG-CCA-20260501-003` ack'd; **commit `ae83653` codified by FRG as a protocol exemplar** for engineering-coord same-day ship (5th coordination-protocol convention candidate, fold to `~/Forgg/COORDINATION-PROTOCOL.md` next quiet-moment update)
+>   - §1.3: `MSG-CCA-20260501-001` (DCAW T0 ack) accepted; T0-only stance endorsed (no T1 EFFORTs identified is correct); `EFFORT-DCAW-Adoption/log_aca-cca-attribute-correlation.md` (this doc) noted as **2nd confirmed DCAW-native execute log in flight** alongside MAP's `EFFORT-Phase-A-Kickoff/log_phase-a-kickoff.md`
+>   - §1.4: ACA Day 4-5 wire-up green-lit; joint verification ~2026-05-04 Phase 4a Day 7 (today); FOB v0.4.0 absorption confirmed by FOB
+> - **Action:** P-3 readiness ping sent to ACA — see next callout. Other 3 messages in same batch (FRG-001/MAP, FRG-002/AGO, FRG-003/FCL) processed as bare archives — no CCA action.
+
+> [!log]- communication direction=outbox to=ACA from=CCA: P-3 readiness check — Phase 4a Day 7 today
+> - **Direction:** outbox
+> - **To:** ACA
+> - **From:** CCA
+> - **Topic:** P-3 readiness check — joint SigNoz verification coordination on Day 7
+> - **Ref:** MSG-CCA-20260504-001-to-ACA
+> - **Path source:** `OUTBOX/MSG-CCA-20260504-001-to-ACA.md`
+> - **Path delivered:** `~/PROJECT-AI-Claude-Agents/INBOX/MSG-CCA-20260504-001-to-ACA.md`
+> - **Path cc:** `~/Forgg/INBOX/MSG-CCA-20260504-001-cc.md`
+> - **Timestamp:** 2026-05-04T16:00Z
+> - **Asks:** ACA wire-up status (done? in flight? blocked?); coordination preference for synchronous vs async verification; body-embed fallback flag-back if header reachability failed.
+
+> [!log]- plan-execution: P-3 verification — readiness ping sent
+> - **Plan item:** P-3 (joint verification — two trace trees join via `forgg.cca_request_id` in SigNoz)
+> - **Timestamp:** 2026-05-04T16:00Z
+> - **Status update:** still blocked-on-ACA but proactive ping sent on Day 7 per FRG-004 §1.4 timing reference. Awaiting ACA reply.
+
 ## Decisions ^decisions
 
 > [!log]- decision: header naming — adopt `X-Forgg-CCA-Request-Id` (parallel echo)

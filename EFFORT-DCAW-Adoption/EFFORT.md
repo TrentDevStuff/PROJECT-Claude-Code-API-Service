@@ -1,13 +1,13 @@
 ---
 created: 2026-05-01T20:35:00Z
-updated: 2026-05-01T21:55:00Z
+updated: 2026-05-04T16:05:00Z
 type: effort
 project: PROJECT-Claude-Code-API-Service
 status: in_progress
 priority: medium
 owner: trent
 current_phase: execute
-current_wave: 4
+current_wave: 5
 filename_convention: dcaw-native (no-date phase_topic.md)
 yaml_convention: merged (per OQ-34 wave-8 close in EFFORT-Document-Centric-AI-Workflow)
 dcaw_tier: T0 (forward adoption only — no retrofit)
@@ -20,6 +20,8 @@ related_messages:
   - MSG-CCA-20260501-002-to-ACA   # design accept reply (delivered + cc'd to FRG)
   - MSG-CCA-20260501-003-to-ACA   # shipped notification, commit ae83653 (delivered + cc'd to FRG)
   - MSG-FRG-20260501-005-cc       # FRG ratification of ACA Wave 3 + §2 ack of CCA direct coord (received cc, archived)
+  - MSG-FRG-20260502-004-cc       # FRG batch close-loop; §1.2 codifies ae83653 as protocol exemplar (received cc, archived)
+  - MSG-CCA-20260504-001-to-ACA   # P-3 readiness ping on Day 7 (delivered + cc'd to FRG)
 related_commits:
   - ae83653  # feat(phase-4c): emit forgg.cca_request_id span attr + X-Forgg-CCA-Request-Id header [Step 2]
   - d20a3ee  # docs(coord): add EFFORT-DCAW-Adoption + Forgg coord trail for Phase 4c Step 2
@@ -87,12 +89,13 @@ The attribute-correlation work overlaps `EFFORT-Cross-Service-Observability/` (P
 
 **Phase: execute (wave 4, 2026-05-01).** Plan v1 approved-by-action wave 2; first DCAW application (Step 4a + 4b) shipped wave 3; cc-delivery cleanup + FRG MSG-005 triage completed wave 4.
 
-**Active state:**
-- P-1 (4a coord reply) ✅ done — MSG-CCA-20260501-002-to-ACA shipped 20:50Z
-- P-2 (4b code ship) ✅ done — commit `ae83653` on `feature/phase-4c-instrumentation`, pushed to remote
-- P-3 (joint SigNoz verification) ⏳ blocked-on-ACA Day 4-5 (~2026-05-03 → 05-04)
+**Active state (wave 5, 2026-05-04 Phase 4a Day 7):**
+- P-1 (4a coord reply) ✅ done — MSG-CCA-20260501-002-to-ACA shipped 2026-05-01T20:50Z
+- P-2 (4b code ship) ✅ done — commit `ae83653` on `feature/phase-4c-instrumentation`, pushed to remote; FRG codified as a coord-protocol exemplar (5th convention candidate) per `MSG-FRG-20260502-004-cc` §1.2
+- P-3 (joint SigNoz verification) ⏳ blocked-on-ACA — readiness ping `MSG-CCA-20260504-001-to-ACA` sent 2026-05-04T16:00Z; awaiting reply
 - All cc-deliveries to Forgg ✅ done; loop closed on FRG §2 ask
-- `.claude-project/PROJECT.md` registration ✅ done (orchestration symlink target updated)
+- `.claude-project/PROJECT.md` registration ✅ done (orchestration symlink target updated; orchestration repo synced commit `ad503c5`)
+- CLI version ✅ bumped 0.1.0 → 0.2.0 (catch-up release covering Phase 4c Steps 1+2, prompt caching, deadlock fix, error classification)
 
 **Outstanding (deferred per plan):** OQ-4 (CCA `CLAUDE.md` DCAW awareness section), OQ-5 (orchestration registration in `~/.claude/orchestration/projects/`).
 
@@ -111,6 +114,7 @@ The attribute-correlation work overlaps `EFFORT-Cross-Service-Observability/` (P
 | 2 | 2026-05-01 | Founder approval-by-action ("plan it first, then implement and track") → phase transition + execute kickoff | `log_aca-cca-attribute-correlation.md` | EFFORT.md (phase transition + wave-2 entry) | — | OQ-1 (lean A), OQ-2 (lean broad), OQ-3 (lean Step-4-scoped); OQ-4 + OQ-5 deferred |
 | 3 | 2026-05-01 | Execute work — P-1 (ACA reply) + P-2 (4b code ship) | — | `log_aca-cca-attribute-correlation.md` (plan-execution + decision callouts); EFFORT.md (wave-3 entry) | — | P-1, P-2 closed; P-3 blocked-on-ACA. Implementation decision logged: contextvar + custom SpanProcessor pattern over parent-span-only hook. Commit `ae83653` shipped on `feature/phase-4c-instrumentation`. |
 | 4 | 2026-05-01 | Receipt of FRG MSG-005-cc (Wave 3 ACA ratification with CCA-relevant §2); cc-delivery cleanup; PROJECT.md registration | — | `log_aca-cca-attribute-correlation.md` (FRG inbound + 2 cc-deliveries logged + cc-convention decision); EFFORT.md (frontmatter, current-phase, wave-4 entry); `.claude-project/PROJECT.md` (EFFORT-DCAW-Adoption added to Active) | — | cc-delivery convention codified (`-cc.md` suffix to recipient INBOX). Branch `feature/phase-4c-instrumentation` pushed (3 new commits). |
+| 5 | 2026-05-04 | Phase 4a Day 7 — receipt of FRG batch close-loop (MSG-FRG-20260502-004-cc) codifying `ae83653` as a coord-protocol exemplar; P-3 readiness ping sent to ACA | — | `log_aca-cca-attribute-correlation.md` (4 callouts: FRG-004 inbound, ACA outbound, P-3 progress, plan-execution status); EFFORT.md (frontmatter, related_messages, wave-5 entry); CLI version bump 0.1.0 → 0.2.0 catch-up | — | P-3 transitions from "blocked-on-ACA / awaiting Day 4-5" to "blocked-on-ACA / readiness ping in flight." 4 cc'd messages from 2026-05-02 archived (FRG-001/MAP, -002/AGO, -003/FCL, -004/batch-close-loop). |
 
 ## Artifact Map ^artifact-map
 
