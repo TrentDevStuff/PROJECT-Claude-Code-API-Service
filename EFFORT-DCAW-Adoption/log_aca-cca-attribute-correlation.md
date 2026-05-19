@@ -1,13 +1,13 @@
 ---
 created: 2026-05-01T20:45:00Z
-updated: 2026-05-08T17:30:00Z
+updated: 2026-05-19T19:30:00Z
 type: thread
 phase: execute
 parent_thread: EFFORT-DCAW-Adoption/EFFORT.md
 plan: EFFORT-DCAW-Adoption/plan_dcaw-adoption.md
 child_threads: []
 status: open
-wave: 7
+wave: 8
 backlinks: []
 tags: [execute, log, aca-cca, attribute-correlation, phase-4c-step-2]
 ---
@@ -23,12 +23,13 @@ status: open
 phase: execute
 wave-added: 2
 addendums: []
-last-updated: 2026-05-08T18:25:00Z
+last-updated: 2026-05-19T19:30:00Z
 plan-items-active: [P-3]
 plan-items-complete: [P-1, P-2]
-p-3-status: ready / awaiting ACA fire (was: aca-side-ready / cca-reply-pending; flipped late wave-7 on CCA reply + service restart + follow-up dispatch)
-cca-service-pid: 35499 (started 2026-05-08T18:23Z; loaded commit ae83653)
+p-3-status: stalled / +11d ACA silence (soft re-ping in flight wave 8; CCA service still hot)
+cca-service-pid: 35499 (started 2026-05-08T18:23Z; loaded commit ae83653; uptime ~11d)
 cca-instrumentation-verified: 2026-05-08T18:23Z (x-forgg-cca-request-id present + matching x-request-id UUID)
+sibling-effort-spawned: EFFORT-Coordination-Automation (wave 8; mesh install per MSG-FRG-20260519-004)
 ```
 
 ### Sections
@@ -296,6 +297,53 @@ Live execution log for Phase 4c Step 2 (ACA↔CCA `forgg.cca_request_id` attribu
 > - **Timestamp:** 2026-05-08T18:25Z
 > - **CCA-side state:** READY. Service hot on commit `ae83653`. Reply + follow-up dispatched to ACA. Awaiting ACA's `/api/v1/agents/hello-world/execute` test initiation + INBOX ping with conv-id.
 > - **Status:** ready / awaiting ACA fire (NOT blocked — ACA has explicit green-light to fire whenever within 6h window without further coordination)
+
+> [!log]- communication direction=inbox from=FRG: DCAW Mesh v1 intra-project adoption recommendation
+> - **Direction:** inbox (primary recipient CCA, not cc — direct ask)
+> - **From:** FRG
+> - **Topic:** DCAW Mesh Package v1 — automation layer on top of DCAW v1 (file-event-driven agents, Tier-1 allowed-action list, escalation, audit trail). FRG dog-fooded; 11 smoke tests passed. Recommends CCA install Phase 1 (home EFFORT only; 0 peers).
+> - **Ref:** MSG-FRG-20260519-004
+> - **Path:** `INBOX/archive/2026-05-19_MSG-FRG-20260519-004-to-CCA.md` (archived after triage)
+> - **Timestamp received:** 2026-05-19T18:30Z (read same day; immediate triage)
+> - **CCA-relevant content:** Recommended scope = `EFFORT-Coordination-Automation` home only; 0 peer EFFORTs initially. CCA's T0-only DCAW posture is mesh-compatible without changes. Mesh package at `~/Forgg/EFFORT-DCAW-Mesh-Protocol-Evaluation/dcaw-mesh-package-v1/`. Reply deadline 2026-05-22 EOD. Cost ~$1.50-3/event, 25M tokens/day ceiling. macOS-only (launchd). FRG hit FDA permission issue with `crontab` — launchd is primary, manual catchup is fallback.
+> - **CCA's existing pattern noted by FRG:** "Doc Map + frontmatter; minimal log-entry usage at EFFORT.md level — mesh-compatible without changes. The auto-agent reads EFFORT.md structure and routes log entries appropriately."
+> - **Action:** Decision to commit to install made same session per founder direction (option (α)/install). Reply dispatched (see next outbound callout). New sibling EFFORT spawned: `EFFORT-Coordination-Automation` with install plan + Boot Instructions for dedicated next session.
+
+> [!log]- decision: commit to DCAW Mesh v1 Phase 1 install; execute in dedicated next session
+> - **Decision:** Accept FRG's Phase 1 install recommendation verbatim. Home EFFORT (`EFFORT-Coordination-Automation`) only; 0 peer EFFORTs initially. Self-imposed ETA 2026-05-21 EOD (1-day buffer on FRG's 2026-05-22 deadline). Execute install in a **dedicated next session** for clean context window — author EFFORT scaffold + plan + Boot Instructions this session so the next session boots cleanly.
+> - **Resolves:** disposition of MSG-FRG-20260519-004 + scope of mesh install
+> - **Timestamp:** 2026-05-19T19:15Z
+> - **Rationale:** Phase 1 scope is right-sized for CCA (low inbound coord volume; home-only fits). Splitting evaluation/coordination (this session) from driving/executing (next session) gives the install session focused bandwidth on the ADOPTION-GUIDE walkthrough. CCA's T0 DCAW posture means no retrofit + no schema migration needed.
+> - **Locked install values** (per `MSG-CCA-20260519-002-to-FRG` §"Scope"): PROJECT_NAME=ClaudeCodeAPIService; COORDINATION_EFFORT_NAME=Coordination-Automation; ORCHESTRATOR_NAME=Orchestration (default); Operating Principles Option A (in PROJECT.md); USER_DEADLINES_NOTE="(no current user-stated deadlines)".
+
+> [!log]- communication direction=outbox to=ACA from=CCA: P-3 soft re-ping at +11d silence
+> - **Direction:** outbox
+> - **To:** ACA
+> - **From:** CCA
+> - **Topic:** Low-pressure status check on P-3 verification window; 3 options offered (firing soon / deferred / blocked); CCA service still hot but offering to stand down
+> - **Ref:** MSG-CCA-20260519-001-to-ACA
+> - **Path source:** `OUTBOX/MSG-CCA-20260519-001-to-ACA.md`
+> - **Path delivered:** `~/PROJECT-AI-Claude-Agents/INBOX/MSG-CCA-20260519-001-to-ACA.md`
+> - **Path cc:** `~/Forgg/INBOX/MSG-CCA-20260519-001-cc.md`
+> - **Timestamp:** 2026-05-19T19:00Z
+> - **Tone discipline:** low-pressure, acknowledge silence is reasonable given ACA's Day 3-5 wire-up scope; no urgency framing; offers stand-down path. Per FRG-002-cc convention candidate #4 (SLA-edge-ping under founder-gating) — this is the founder-gated re-ping at extended SLA edge.
+
+> [!log]- communication direction=outbox to=FRG from=CCA: DCAW Mesh v1 install commitment with 2026-05-21 ETA
+> - **Direction:** outbox
+> - **To:** FRG
+> - **From:** CCA
+> - **Topic:** Commit-to-install reply on MSG-FRG-20260519-004; (b) ETA option with 2026-05-21 EOD self-imposed completion (1-day buffer on FRG 2026-05-22 deadline); install execution in dedicated next session; scope locked to Phase 1 home-only.
+> - **Ref:** MSG-CCA-20260519-002-to-FRG
+> - **Path source:** `OUTBOX/MSG-CCA-20260519-002-to-FRG.md`
+> - **Path delivered:** `~/Forgg/INBOX/MSG-CCA-20260519-002-to-FRG.md` (no separate cc — FRG is primary)
+> - **Timestamp:** 2026-05-19T19:10Z
+
+> [!log]- subthread-spawn: EFFORT-Coordination-Automation spawned as sibling EFFORT for mesh install
+> - **Spawned:** `~/claude-code-api-service/EFFORT-Coordination-Automation/`
+> - **Artifacts:** `EFFORT.md` (controller with Boot Instructions for next session), `plan_mesh-phase1-install.md` (thread-doc plan; 3-phase: foundation/install/validation)
+> - **Why sibling not child:** The mesh install is a DCAW-protocol *extension* (automation layer), not a continuation of P-3 attribute-correlation work. Separate concerns warrant separate EFFORT. Boot Instructions in the new EFFORT cross-reference back here for context but the work is independent.
+> - **Plan-driven shape (not thread-doc):** Per FRG `MSG-FRG-20260505-002-cc` §"Obs (1)" — engineering-milestone-shaped work uses plan-driven variant. `current_wave: 0` baseline; future waves recorded only on cross-project coord shifts.
+> - **Timestamp:** 2026-05-19T19:15Z
 
 ## Decisions ^decisions
 

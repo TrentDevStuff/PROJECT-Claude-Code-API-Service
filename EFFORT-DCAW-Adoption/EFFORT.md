@@ -1,13 +1,13 @@
 ---
 created: 2026-05-01T20:35:00Z
-updated: 2026-05-08T17:30:00Z
+updated: 2026-05-19T19:30:00Z
 type: effort
 project: PROJECT-Claude-Code-API-Service
 status: in_progress
 priority: medium
 owner: trent
 current_phase: execute
-current_wave: 7
+current_wave: 8
 filename_convention: dcaw-native (no-date phase_topic.md)
 yaml_convention: merged (per OQ-34 wave-8 close in EFFORT-Document-Centric-AI-Workflow)
 dcaw_tier: T0 (forward adoption only — no retrofit)
@@ -28,6 +28,11 @@ related_messages:
   - MSG-ACA-20260506-003-cc       # ACA DCAW T0+T1 ack to FRG (received cc, archived 2026-05-08; FYI only)
   - MSG-CCA-20260508-001-to-ACA   # P-3 ACK; test shape accepted; restart precondition surfaced (delivered + cc'd to FRG)
   - MSG-CCA-20260508-002-to-ACA   # P-3 follow-up: pre-emptive restart complete; instrumentation verified; ACA fire whenever (delivered + cc'd to FRG)
+  - MSG-FRG-20260519-004-to-CCA   # DCAW Mesh v1 intra-project adoption recommendation (received, archived 2026-05-19)
+  - MSG-CCA-20260519-001-to-ACA   # P-3 soft re-ping at +11d (delivered + cc'd to FRG)
+  - MSG-CCA-20260519-002-to-FRG   # Mesh install commitment with 2026-05-21 ETA (delivered to FRG)
+related_efforts_spawned:
+  - EFFORT-Coordination-Automation  # mesh home EFFORT spawned 2026-05-19 wave 8 in response to MSG-FRG-20260519-004
 related_commits:
   - ae83653  # feat(phase-4c): emit forgg.cca_request_id span attr + X-Forgg-CCA-Request-Id header [Step 2]
   - d20a3ee  # docs(coord): add EFFORT-DCAW-Adoption + Forgg coord trail for Phase 4c Step 2
@@ -96,7 +101,15 @@ The attribute-correlation work overlaps `EFFORT-Cross-Service-Observability/` (P
 
 **Phase: execute (wave 4, 2026-05-01).** Plan v1 approved-by-action wave 2; first DCAW application (Step 4a + 4b) shipped wave 3; cc-delivery cleanup + FRG MSG-005 triage completed wave 4.
 
-**Active state (wave 7, 2026-05-08 — Phase 4a Day 11; CCA-side ready):**
+**Active state (wave 8, 2026-05-19 — P-3 stalled +11d; mesh adoption opened as new EFFORT):**
+- P-1 (4a coord reply) ✅ done — MSG-CCA-20260501-002-to-ACA shipped 2026-05-01T20:50Z
+- P-2 (4b code ship) ✅ done — commit `ae83653`; FRG codified as coord-protocol exemplar
+- P-3 (joint SigNoz verification) ⚠️ **stalled at +11d ACA silence** — CCA service still hot on `ae83653` (PID 35499 from 2026-05-08 restart); ACA's last commit was 2026-05-02; no OUTBOX activity since 2026-05-08. Soft re-ping `MSG-CCA-20260519-001-to-ACA` dispatched today (low-pressure check-in offering three options: still firing / deferred / blocked). Awaiting ACA disposition.
+- **Mesh adoption (NEW, wave 8)**: Received `MSG-FRG-20260519-004-to-CCA` recommending DCAW Mesh v1 Phase 1 install. CCA replied via `MSG-CCA-20260519-002-to-FRG` committing to install with 2026-05-21 EOD ETA. **New sibling EFFORT `EFFORT-Coordination-Automation` scaffolded this wave** (EFFORT.md + plan_mesh-phase1-install.md). Install execution deferred to dedicated next session for clean context window. Mesh is independent of P-3 verification; no interaction.
+
+(Detailed wave-7 active state archived in Wave Log row.)
+
+**Prior active state (wave 7, 2026-05-08 — Phase 4a Day 11; CCA-side ready):**
 - P-1 (4a coord reply) ✅ done — MSG-CCA-20260501-002-to-ACA shipped 2026-05-01T20:50Z
 - P-2 (4b code ship) ✅ done — commit `ae83653` on `feature/phase-4c-instrumentation`, pushed to remote; FRG codified as a coord-protocol exemplar (5th convention candidate) per `MSG-FRG-20260502-004-cc` §1.2
 - P-3 (joint SigNoz verification) 🟢 **CCA-side ready; awaiting ACA fire** — ACA shipped Day 3-5 on 2026-05-06 (delivered 2026-05-08T22:26Z as `MSG-ACA-20260506-001-to-CCA`); wire-up complete both paths. CCA replied via `MSG-CCA-20260508-001-to-ACA` (accepted §2 test shape) + `MSG-CCA-20260508-002-to-ACA` follow-up (pre-emptive service restart per founder direction). New CCA process PID 35499 hot on commit `ae83653`; instrumentation verified via `curl -i /health` (`x-forgg-cca-request-id` present + matching `x-request-id` UUID). ACA has explicit green-light to fire test request whenever within ~6h window (~through 2026-05-09T06:30Z) without further coordination ping.
@@ -130,6 +143,7 @@ The attribute-correlation work overlaps `EFFORT-Cross-Service-Observability/` (P
 | 5 | 2026-05-04 | Phase 4a Day 7 — receipt of FRG batch close-loop (MSG-FRG-20260502-004-cc) codifying `ae83653` as a coord-protocol exemplar; P-3 readiness ping sent to ACA | — | `log_aca-cca-attribute-correlation.md` (4 callouts: FRG-004 inbound, ACA outbound, P-3 progress, plan-execution status); EFFORT.md (frontmatter, related_messages, wave-5 entry); CLI version bump 0.1.0 → 0.2.0 catch-up | — | P-3 transitions from "blocked-on-ACA / awaiting Day 4-5" to "blocked-on-ACA / readiness ping in flight." 4 cc'd messages from 2026-05-02 archived (FRG-001/MAP, -002/AGO, -003/FCL, -004/batch-close-loop). |
 | 6 | 2026-05-08 | 2026-05-05 inbound triage (3-day delay; FYI-shape) + P-3 SLA-edge-ping decision point | — | `log_aca-cca-attribute-correlation.md` (3 callouts: SSD-001-cc inbound, FRG-002-cc inbound w/ plan-driven variant codification, decision callout on future-CCA EFFORTs adopting plan-driven variant); EFFORT.md (frontmatter, related_messages, current-phase, wave-6 entry) | — | FRG-002-cc convention candidate #8 (plan-driven EFFORT variant) ratified as forward-posture for CCA — no retrofit triggered. P-3 ACA silence at +96h flagged as past-SLA; SLA-edge-ping queued under founder-gating. **(Status retracted wave 7 — ACA replied within minutes of this snapshot.)** |
 | 7 | 2026-05-08 | ACA delivered Day 3-5 ship + DCAW T1 ack mid-triage (2026-05-08T22:26Z + 22:32Z, filename-dated 2026-05-06) — P-3 unblocked → CCA reply + pre-emptive restart + follow-up dispatched same wave | — | `log_aca-cca-attribute-correlation.md` (9 callouts total: kickback re: wave-6 staleness, ACA-001 inbound w/ test shape + FOB v0.3.0 allowlist note, ACA-003-cc inbound, accept-test-shape decision, WorkerPool risk-register decision, CCA-001 outbound dispatch, service-restart plan-execution callout, CCA-002 follow-up outbound dispatch, P-3 ready/awaiting-fire status); EFFORT.md (frontmatter, related_messages, current-phase, wave-7 entry, risk-register note, process-learning note, Cross-Project Implications FOB rewrite, Next Steps revision); orchestration repo housekeeping commit `7c8e0b9` + settings.json commit `8430a92` pushed | — | P-3 status flips twice: past-SLA → ACA-side-ready/CCA-reply-pending → CCA-ready/awaiting-ACA-fire. SLA-edge-ping retracted. Service restarted (PID 24314 → PID 35499); instrumentation verified live via curl + x-forgg-cca-request-id header. Follow-up dispatch closed coord round-trip (founder elected pre-emptive restart). Process learnings: (1) re-scan INBOX between status assessment and outbound action; (2) long-lived service processes mask code-vs-deployment skew — ship checklist needs restart step. |
+| 8 | 2026-05-19 | (a) ACA silent +11d on P-3 → soft re-ping decision; (b) MSG-FRG-20260519-004 received (DCAW Mesh v1 Phase 1 recommendation, deadline 2026-05-22 EOD) → install committed | `EFFORT-Coordination-Automation/EFFORT.md`, `EFFORT-Coordination-Automation/plan_mesh-phase1-install.md` (new sibling EFFORT spawned for mesh install) | `log_aca-cca-attribute-correlation.md` (3 callouts: FRG-004 inbound w/ mesh adoption ratified for next session, CCA-001 soft re-ping outbound, CCA-002 FRG mesh commit outbound); EFFORT.md (frontmatter, related_messages, related_efforts_spawned, current-phase, wave-8 entry, Cross-Project Implications: mesh sibling note); PROJECT.md (new EFFORT-Coordination-Automation entry); MSG-FRG-20260519-004 archived | — | P-3 still ⏳ blocked (now stalled +11d; awaiting ACA disposition reply to re-ping). Mesh install fully committed (2026-05-21 EOD ETA; FRG 2026-05-22 hard deadline). Mesh execution deferred to dedicated next session per founder direction — Boot Instructions in `EFFORT-Coordination-Automation/EFFORT.md` give next AI session crystal-clear entry point. CCA service (PID 35499) still hot on `ae83653`, untouched by this wave. |
 
 ## Artifact Map ^artifact-map
 
@@ -184,6 +198,7 @@ EFFORT-DCAW-Adoption/
 - **FRG**: lightly affected — observes T0 adoption land cleanly in another project; refines protocol guidance as kickbacks accumulate (none expected).
 - **Phase 4c (CCA observability)**: code commits ship there; this EFFORT cross-references commits but doesn't own them.
 - **FOB (forgg-observability)**: `forgg.cca_request_id` does NOT land in v0.3.0's `ALLOWED_SPAN_ATTRIBUTES`; PHIFilteringExporter strips it before SigNoz export. Per `MSG-FRG-20260502-004` §1.4 + `MSG-ACA-20260506-001` §3, FOB v0.4.0 absorbs it allowlist-wide. P-3 today rides on `forgg.conversation_id` (allowlisted; documented fallback C). No CCA action; FOB v0.4.0 ship makes `forgg.cca_request_id` visible additively with zero code change on either side.
+- **EFFORT-Coordination-Automation (sibling, spawned wave 8)**: DCAW Mesh v1 Phase 1 install per `MSG-FRG-20260519-004-to-CCA`. Independent of P-3 verification; no interaction with this EFFORT's open work. Mesh may eventually peer-add this EFFORT to its watch list once P-3 closes (deferred per Mesh plan §"Out of scope for Phase 1").
 
 ## Next Steps ^next-steps
 
