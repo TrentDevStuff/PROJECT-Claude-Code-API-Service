@@ -1,0 +1,6 @@
+# Understand-Anything: commit the graph, ignore regenerable scratch.
+# Keep: knowledge-graph.json, meta.json, fingerprints.json, .understandignore, config.json
+intermediate/
+tmp/
+.trash-*/
+diff-overlay.json

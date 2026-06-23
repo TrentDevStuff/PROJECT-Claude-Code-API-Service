@@ -13,6 +13,19 @@ Both paths share: budget tracking, auth, permission profiles, audit logging, cir
 
 All endpoints require Bearer token auth. Keys are stored in `~/.claude-api/keys/<service-id>.key` (persistent) and in the auth DB at `data/auth.db`.
 
+## Code graph — use `graph-context` before grepping code
+
+This repo has an **Understand-Anything code knowledge graph** at `.understand-anything/knowledge-graph.json` (built 2026-06-23, code-only: **307 nodes, 8 layers, 11-step tour**). Scope is the service code (`src/` + `cli/` + `client/` + `main.py` + tests/examples + infra); the rendered MkDocs `site/` static doc tree is excluded. **When exploring or changing code** (esp. before touching a hot module), build context from it instead of grepping/reading blind:
+
+```bash
+GC="python3 ~/.claude/skills/graph-context/graph_context.py"
+$GC brief --repo CCA                                    # ~700-token map: layers + keystones + tour + freshness
+$GC depends-on src/worker_pool.py --repo CCA           # reverse deps / blast radius before a change
+$GC blast-radius <file> --repo CCA                     # transitive impact · subsystem <layer> · find <q> · node <file>
+```
+
+Keystones (highest fan-in = natural decision/risk points): `src/worker_pool.py` (13 — the subprocess execution core every request flows through), `cli/utils.py` (13), `src/budget_manager.py` (9), `cli/api_client.py` (10), `src/auth.py` (7), `src/permission_manager.py` (6). Request-lifecycle spine: `main.py` → `src/api.py` → governance (`auth`/`budget_manager`/`permission_manager`/`security_validator`) → `src/worker_pool.py` (CLI subprocess dispatch) → `src/websocket.py` (stream back). **Principle: graph = index, not dump** — never read `knowledge-graph.json` wholesale; pull the brief + targeted slices, then read the few files that matter. `brief`/`stats` print **freshness** vs `git HEAD`; if STALE, treat it as "as of commit X" and re-run `/understand` to refresh. Code-only — for the design/decision narrative use EFFORT thread docs / `thread-log`. Full guidance: `~/.claude-system/rules/document-centric-workflow.md` → "Code-context augmentation". Rollout log: `~/Forgg/EFFORT-Competitive-Landscape/log_understand-mesh-rollout.md`.
+
 ## Common Commands
 
 ```bash
