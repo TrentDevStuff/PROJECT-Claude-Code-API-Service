@@ -71,3 +71,5 @@ temp/
 
 # Per-session scratch (orchestration ephemera, not source)
 .claude-project/daily/
+.env.*
+.env.bak*
