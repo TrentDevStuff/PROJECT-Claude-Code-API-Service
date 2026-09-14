@@ -414,4 +414,4 @@ if __name__ == "__main__":
     # WorkerPool monitor thread contends for the GIL via threading.Lock.
     # See process sample: main thread stuck in lock_PyThread_acquire_lock
     # inside uv__run_idle → _on_idle → task_step → PyObject_GetAttr.
-    uvicorn.run(app, host="0.0.0.0", port=settings.port, loop="asyncio")
+    uvicorn.run(app, host=settings.host, port=settings.port, loop="asyncio")

@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application configuration with environment variable overrides."""
 
+    host: str = "127.0.0.1"  # Bind address; loopback only by default (hands:cca-8006-bind-localhost)
     port: int = 8006
     max_workers: int = 5
     db_path: str = "data/budgets.db"
